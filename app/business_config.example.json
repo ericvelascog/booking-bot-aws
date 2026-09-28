@@ -1,0 +1,66 @@
+{
+  "_nota": "PLANTILLA para un cliente REAL (clínica de fisioterapia / osteopatía). Copia este contenido, rellénalo con los datos de la clínica y pégalo en la variable de entorno BUSINESS_CONFIG de su despliegue. NO lo subas a Git con datos reales.",
+  "nombre": "Nombre de la Clínica",
+  "descripcion": "Breve descripción de la clínica y su especialidad (fisioterapia, osteopatía, readaptación deportiva...).",
+  "telefono": "+34 600 00 00 00",
+  "direccion": "Calle Ejemplo 1, Ciudad",
+  "como_llegar": "Indicaciones o referencia para llegar.",
+  "horario": {
+    "lunes": "09:00 - 20:00",
+    "martes": "09:00 - 20:00",
+    "miercoles": "09:00 - 20:00",
+    "jueves": "09:00 - 20:00",
+    "viernes": "09:00 - 14:00",
+    "sabado": "Cerrado",
+    "domingo": "Cerrado"
+  },
+  "servicios": [
+    {
+      "nombre": "Primera visita",
+      "precio": "50,00€",
+      "duracion_min": 60,
+      "descripcion": "Valoración inicial completa y primer tratamiento."
+    },
+    {
+      "nombre": "Sesión de fisioterapia",
+      "precio": "40,00€",
+      "duracion_min": 45,
+      "descripcion": "Sesión de seguimiento con terapia manual y ejercicio terapéutico."
+    },
+    {
+      "nombre": "Osteopatía",
+      "precio": "45,00€",
+      "duracion_min": 60,
+      "descripcion": "Tratamiento osteopático global."
+    },
+    {
+      "nombre": "Punción seca",
+      "precio": "35,00€",
+      "duracion_min": 30,
+      "descripcion": "Tratamiento de puntos gatillo con punción seca."
+    }
+  ],
+  "_nota_profesionales": "OPCIONAL. Si la clínica tiene VARIOS fisioterapeutas, pon uno por profesional con su propio calendar_id (comparte cada calendario con la cuenta de servicio). El bot preguntará '¿con quién?'. Si es de UN SOLO profesional, ELIMINA esta sección 'profesionales' y se usará el calendario único de la variable GOOGLE_CALENDAR_ID.",
+  "profesionales": [
+    {
+      "nombre": "Marta",
+      "calendar_id": "id_del_calendario_de_marta@group.calendar.google.com"
+    },
+    {
+      "nombre": "Jordi",
+      "calendar_id": "id_del_calendario_de_jordi@group.calendar.google.com"
+    }
+  ],
+  "politicas": {
+    "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación.",
+    "retraso": "Si llegas con más de 15 minutos de retraso, puede que debamos reprogramar tu sesión.",
+    "pago": "Aceptamos efectivo y tarjeta.",
+    "reservas": "Las citas se reservan por WhatsApp."
+  },
+  "asistente": {
+    "nombre": "Clara",
+    "tono": "cercana, profesional y concisa"
+  },
+  "duracion_cita_min": 45,
+  "demo": false
+}
