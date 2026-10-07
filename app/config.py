@@ -2,7 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore": el .env también lleva variables que leen otros módulos
+    # (GOOGLE_CREDENTIALS_CONTENT, BUSINESS_CONFIG); sin esto, arrancar con
+    # ese .env falla con "Extra inputs are not permitted".
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     whatsapp_token: str
     whatsapp_phone_number_id: str

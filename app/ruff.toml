@@ -1,0 +1,6 @@
+target-version = "py312"
+
+[lint]
+# Reglas clásicas de ruff: fallos reales (variables sin usar, imports rotos,
+# nombres sin definir) y errores graves de sintaxis. Sin reglas de estilo.
+select = ["E4", "E7", "E9", "F"]

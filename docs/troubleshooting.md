@@ -17,3 +17,10 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** the PowerShell window had been opened *before* installing Docker. A shell reads `PATH` only once, at startup, so it never saw the new entry.
 - **Fix:** closed and reopened PowerShell; `docker build` worked.
 - **Lesson:** after installing any CLI tool, open a new terminal before assuming the install failed.
+
+## 002 — App crashes on startup when `.env` has variables Settings doesn't declare (2026-10-06)
+- **Symptom:** the first test run stopped before any test ran: `ValidationError ... google_credentials_content: Extra inputs are not permitted`, raised from `config.py`.
+- **Diagnosis:** the same image had started fine with `docker run --env-file`. The difference: tests mount `app/` (including `app/.env`), so pydantic-settings *read the .env file*; in the container the values arrive as environment variables and there is no `.env` file inside the image.
+- **Root cause:** pydantic-settings rejects unknown keys found in the `.env` file by default. `GOOGLE_CREDENTIALS_CONTENT` (added for container use) is read directly by `calendar_service.py`, so it was not declared in `Settings`. Running the app outside Docker with that `.env` would have crashed too.
+- **Fix:** `extra="ignore"` in `Settings.model_config`.
+- **Lesson:** "works in the container" is not "works everywhere": config can be loaded from several sources (env vars vs. `.env` file) with different rules. Tests that run the code a different way catch this.

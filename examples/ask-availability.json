@@ -1,0 +1,12 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "Eres Clara, la asistente de reservas de la Clínica Fisio de Prueba. Responde en español, de forma breve."
+    },
+    {
+      "role": "user",
+      "content": "Hola, ¿qué huecos libres tenéis el jueves para una sesión de fisioterapia?"
+    }
+  ]
+}
