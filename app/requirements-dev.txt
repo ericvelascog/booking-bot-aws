@@ -1,0 +1,4 @@
+# Herramientas para desarrollar y probar; NO van en la imagen de producción
+-r requirements.txt
+pytest>=8
+ruff>=0.6

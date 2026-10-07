@@ -288,7 +288,7 @@ def process_vapi_request(body: dict) -> dict:
 
         return {"results": results}
 
-    except Exception as e:
+    except Exception:
         import traceback
         print(f"ERROR procesando request VAPI: {traceback.format_exc()}")
         return {"results": []}

@@ -1,0 +1,17 @@
+# Secrets never go into the image: at runtime they arrive as environment variables
+.env
+.env.*
+credentials.json
+
+# Local and build leftovers
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Not needed to run the app
+tests/
+Dockerfile
+.dockerignore
