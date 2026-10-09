@@ -24,3 +24,10 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** pydantic-settings rejects unknown keys found in the `.env` file by default. `GOOGLE_CREDENTIALS_CONTENT` (added for container use) is read directly by `calendar_service.py`, so it was not declared in `Settings`. Running the app outside Docker with that `.env` would have crashed too.
 - **Fix:** `extra="ignore"` in `Settings.model_config`.
 - **Lesson:** "works in the container" is not "works everywhere": config can be loaded from several sources (env vars vs. `.env` file) with different rules. Tests that run the code a different way catch this.
+
+## 003 — `docker login` to ECR fails with `400 Bad Request` in Windows PowerShell (2026-10-09)
+- **Symptom:** `aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin <registry>` returned `login attempt to https://<registry>/v2/ failed with status: 400 Bad Request`.
+- **Diagnosis:** the AWS session was valid and the token was issued (2238 characters, same region as the registry). Running the *exact same pipeline* inside `cmd /c "..."` returned `Login Succeeded`, so the token was fine and the pipe was the difference.
+- **Root cause:** Windows PowerShell 5.1 does not pass bytes between two native programs untouched: it decodes the first program's output to text and re-encodes it (encoding + trailing newline) before writing it to the second one's stdin. The registry token arrives altered and is rejected.
+- **Fix:** run the pipe through cmd: `cmd /c "aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin <registry>"`. (PowerShell 7.4+, Git Bash and the Linux CI runners pass bytes as-is.)
+- **Lesson:** when a credential works in one shell and not in another, suspect how the shell transports it, not the credential.
