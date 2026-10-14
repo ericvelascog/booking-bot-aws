@@ -3,8 +3,12 @@
 # viene de nuestro repo y de la rama main, da credenciales temporales (1 h).
 
 locals {
-  github_repo = "ericvelascog/booking-bot-aws"
-  account_id  = data.aws_caller_identity.current.account_id
+  # GitHub identifica el repo en la tarjeta con nombres + IDs numéricos
+  # ("immutable subject"): si alguien borrara el repo y creara otro con el
+  # mismo nombre, tendría otro ID y AWS lo rechazaría. Se consulta con:
+  #   gh api repos/ericvelascog/booking-bot-aws/actions/oidc/customization/sub
+  github_subject_prefix = "repo:ericvelascog@234643949/booking-bot-aws@1397462375"
+  account_id            = data.aws_caller_identity.current.account_id
 }
 
 data "aws_caller_identity" "current" {}
@@ -34,7 +38,7 @@ data "aws_iam_policy_document" "github_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.github_repo}:ref:refs/heads/main"]
+      values   = ["${local.github_subject_prefix}:ref:refs/heads/main"]
     }
   }
 }
