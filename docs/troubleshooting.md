@@ -31,3 +31,10 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** Windows PowerShell 5.1 does not pass bytes between two native programs untouched: it decodes the first program's output to text and re-encodes it (encoding + trailing newline) before writing it to the second one's stdin. The registry token arrives altered and is rejected.
 - **Fix:** run the pipe through cmd: `cmd /c "aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin <registry>"`. (PowerShell 7.4+, Git Bash and the Linux CI runners pass bytes as-is.)
 - **Lesson:** when a credential works in one shell and not in another, suspect how the shell transports it, not the credential.
+
+## 004 — Deploy workflow: `Not authorized to perform sts:AssumeRoleWithWebIdentity` (2026-10-14)
+- **Symptom:** the first run of the Deploy workflow failed at *Log in to AWS with OIDC* with `Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity`.
+- **Diagnosis:** the role, the OIDC provider and the audience (`sts.amazonaws.com`) were correct, so the suspect was the trust-policy condition on the token's `sub` claim. `gh api repos/ericvelascog/booking-bot-aws/actions/oidc/customization/sub` showed `"use_immutable_subject": true` and the prefix `repo:ericvelascog@234643949/booking-bot-aws@1397462375`.
+- **Root cause:** GitHub issues the token with an *immutable subject* (owner and repository names plus their numeric IDs). The trust policy expected the classic `repo:ericvelascog/booking-bot-aws:ref:refs/heads/main`, so the `StringEquals` condition never matched.
+- **Fix:** trust condition set to `repo:ericvelascog@234643949/booking-bot-aws@1397462375:ref:refs/heads/main`. This is also safer: a repository recreated with the same name gets a new ID and is rejected.
+- **Lesson:** for OIDC trust policies, check the exact claims the identity provider sends instead of copying the format from older docs.
