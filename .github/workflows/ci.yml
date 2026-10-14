@@ -1,0 +1,70 @@
+# CI: en cada Pull Request hacia main, GitHub comprueba automáticamente que
+# todo está bien. Son los mismos comandos que hacíamos a mano en local.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# El robot solo necesita leer el código
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App (lint, tests, image build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Download the code
+        uses: actions/checkout@v7
+
+      - name: Install Python 3.12 (same version as the image)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            app/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests (pytest)
+        run: pytest -v
+
+      - name: Build the Docker image
+        run: docker build -t booking-bot:ci .
+
+  terraform:
+    name: Terraform (format, validate)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the code
+        uses: actions/checkout@v7
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive infra
+
+      # -backend=false: solo comprueba que el código es correcto, sin conectarse
+      # al estado en S3 (este robot no tiene credenciales de AWS, ni las necesita)
+      - name: Validate infra/bootstrap
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/bootstrap validate
+
+      - name: Validate infra/app
+        run: |
+          terraform -chdir=infra/app init -backend=false -input=false
+          terraform -chdir=infra/app validate
