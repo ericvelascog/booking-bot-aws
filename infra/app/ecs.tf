@@ -1,10 +1,11 @@
 # El bot en marcha: cluster, ficha técnica (task definition) y encargado (service)
 
-variable "image_tag" {
-  description = "Etiqueta de la imagen en ECR (el commit del que salió)"
-  type        = string
-  # La que subimos a mano el 9-oct. En la Fase 3 la elegirá el pipeline.
-  default = "f1f8886"
+# Qué versión del bot se enciende: la imagen más reciente del almacén, es decir,
+# la última que subió el pipeline al hacer merge en main. Así, al encender la
+# infraestructura con `terraform apply`, siempre arranca la última versión.
+data "aws_ecr_image" "latest" {
+  repository_name = data.aws_ecr_repository.app.name
+  most_recent     = true
 }
 
 # El "micrófono": aquí acaba todo lo que el bot escribe (sus logs)
@@ -35,7 +36,7 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([{
     name      = "app"
-    image     = "${data.aws_ecr_repository.app.repository_url}:${var.image_tag}"
+    image     = "${data.aws_ecr_repository.app.repository_url}:${data.aws_ecr_image.latest.image_tags[0]}"
     essential = true
 
     portMappings = [{ containerPort = local.app_port, protocol = "tcp" }]

@@ -21,6 +21,11 @@ COPY . .
 RUN useradd --create-home --uid 10001 app
 USER app
 
+# Versión del código (el commit). La pasa el pipeline con --build-arg; en local
+# vale "dev". Va al final para no invalidar la caché de las capas anteriores.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 EXPOSE 8000
 
 # Exec form: uvicorn runs as PID 1 and receives SIGTERM directly when ECS

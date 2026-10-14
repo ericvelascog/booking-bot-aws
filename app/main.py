@@ -1,4 +1,5 @@
 import asyncio
+import os
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from config import settings
@@ -110,4 +111,5 @@ async def vapi_webhook(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    # version = el commit del que se construyó la imagen (lo pone el pipeline)
+    return {"status": "ok", "version": os.environ.get("APP_VERSION", "dev")}
