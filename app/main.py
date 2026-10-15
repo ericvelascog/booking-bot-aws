@@ -113,3 +113,8 @@ async def vapi_webhook(request: Request):
 async def health():
     # version = el commit del que se construyó la imagen (lo pone el pipeline)
     return {"status": "ok", "version": os.environ.get("APP_VERSION", "dev")}
+
+
+@app.get("/")
+async def root():
+    return {"service": "booking-bot", "status": "ok", "health": "/health"}

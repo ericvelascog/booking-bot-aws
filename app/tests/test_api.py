@@ -7,11 +7,20 @@ client = TestClient(app)
 
 
 def test_health_returns_ok():
+    
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert "version" in response.json()
+
+
+
+def test_root_describes_the_service():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json()["service"] == "booking-bot"
 
 
 def test_webhook_verification_accepts_correct_token():
