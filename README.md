@@ -108,6 +108,8 @@ When the app stack is destroyed, only the bootstrap remains: S3 state, a few ima
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. ECR scans every image on push, and CI builds always pull the latest base image.
 
+These controls are mapped to IT general controls (access, change management, operations), with evidence and known gaps, in [`docs/controls.md`](docs/controls.md).
+
 ## Run it yourself
 
 Requirements: an AWS account with CLI credentials, Terraform ≥ 1.11, Docker and the GitHub CLI. Bucket and repository names are specific to this project (`infra/bootstrap`), so adapt them first.
@@ -167,6 +169,7 @@ infra/app/              Terraform: network, ALB, IAM, ECS
 .github/workflows/      ci.yml (pull requests) and deploy.yml (main)
 scripts/                put-secrets.ps1: upload app secrets to SSM
 docs/adr/               Architecture decision records
+docs/controls.md        IT general controls mapping (evidence and gaps)
 docs/troubleshooting.md Real problems hit while building this, and how they were diagnosed
 ```
 
