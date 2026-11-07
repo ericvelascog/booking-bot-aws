@@ -68,3 +68,8 @@ jobs:
         run: |
           terraform -chdir=infra/app init -backend=false -input=false
           terraform -chdir=infra/app validate
+
+      - name: Validate infra/edge
+        run: |
+          terraform -chdir=infra/edge init -backend=false -input=false
+          terraform -chdir=infra/edge validate

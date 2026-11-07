@@ -31,13 +31,40 @@ resource "aws_lb_target_group" "app" {
   deregistration_delay = 30
 }
 
-# El "oído": escucha en la puerta 80 y lo manda todo al target group
+# La "contraseña" de CloudFront (creada en infra/bootstrap)
+data "aws_ssm_parameter" "origin_verify" {
+  name = "/booking-bot-infra/origin-verify-secret"
+}
+
+# El "oído": escucha en la puerta 80. Por defecto RECHAZA (403)...
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+# ...y solo deja pasar al bot lo que trae la cabecera secreta de CloudFront
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [data.aws_ssm_parameter.origin_verify.value]
+    }
+  }
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
   }

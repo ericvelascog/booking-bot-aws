@@ -82,12 +82,6 @@ data "aws_iam_policy_document" "github_deploy" {
     resources = ["arn:aws:ecs:eu-west-1:${local.account_id}:service/booking-bot/booking-bot"]
   }
 
-  statement {
-    sid       = "FindTheLoadBalancerForTheSmokeTest"
-    actions   = ["elasticloadbalancing:DescribeLoadBalancers"]
-    resources = ["*"] # acción de solo lectura que no admite limitarse a un recurso
-  }
-
   # Entregar a ECS las acreditaciones del bot, y SOLO esas dos: así nadie puede
   # registrar una ficha técnica con un rol más poderoso (escalada de privilegios)
   statement {

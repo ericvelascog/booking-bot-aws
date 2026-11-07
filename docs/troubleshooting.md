@@ -38,3 +38,10 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** GitHub issues the token with an *immutable subject* (owner and repository names plus their numeric IDs). The trust policy expected the classic `repo:ericvelascog/booking-bot-aws:ref:refs/heads/main`, so the `StringEquals` condition never matched.
 - **Fix:** trust condition set to `repo:ericvelascog@234643949/booking-bot-aws@1397462375:ref:refs/heads/main`. This is also safer: a repository recreated with the same name gets a new ID and is rejected.
 - **Lesson:** for OIDC trust policies, check the exact claims the identity provider sends instead of copying the format from older docs.
+
+## 005 — `aws login` always fails with `TOKEN_EXPIRED`, even after a fresh sign-in (2026-11-06)
+- **Symptom:** after three weeks away, Terraform and the AWS CLI failed to refresh credentials. A new `aws login` (also `--remote`, from a private window with a fresh console session) completed in the browser but the CLI returned `AccessDeniedException ... CreateOAuth2Token: The refresh token has expired (TOKEN_EXPIRED)`.
+- **Diagnosis:** the old login cache had been cleared (`aws logout`) and the console session was new, so an expired token was unlikely. I compared the PC clock with the `Date` header of `https://signin.aws.amazon.com`: the PC was **115 s behind**.
+- **Root cause:** clock skew. The login flow sends short-lived, time-stamped proofs signed with the local clock; with almost two minutes of drift they arrive already "expired". The error message points at the token, not at the clock.
+- **Fix:** enabled automatic time and synced the Windows clock (drift 0 s), then `aws login` worked at the first try.
+- **Lesson:** when credentials are rejected as expired right after being issued, check the clock before anything else.

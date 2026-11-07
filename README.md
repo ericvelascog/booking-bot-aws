@@ -7,6 +7,8 @@ An AI booking assistant for physiotherapy clinics, running on **AWS ECS Fargate*
 
 The bot is a FastAPI service that books, lists and cancels appointments over WhatsApp and phone (via VAPI), using the **Claude API** for the conversation and **Google Calendar** as the diary. It started as my bachelor's thesis on Railway. This repository is about taking it to AWS the way a production service would run: containerised, reproducible, deployed automatically and with least-privilege access.
 
+**Live URL:** https://d354dom4m7oqh9.cloudfront.net/health. The backend is started on demand to keep costs down, so a `502` means it is currently off.
+
 ## Architecture
 
 ```mermaid
@@ -15,9 +17,11 @@ flowchart LR
     ext["Anthropic API<br/>Google Calendar<br/>WhatsApp Cloud API"]
     gh["GitHub Actions"]
 
+    cf["CloudFront<br/>HTTPS · *.cloudfront.net"]
+
     subgraph aws["AWS · eu-west-1"]
         subgraph vpc["VPC 10.0.0.0/16 · 2 public subnets in 2 AZs"]
-            alb["Application Load Balancer<br/>HTTP :80 · health checks on /health"]
+            alb["Application Load Balancer<br/>only CloudFront + secret header"]
             task["ECS Fargate task<br/>FastAPI :8000 · 0.25 vCPU · 0.5 GB"]
         end
         ecr[("ECR<br/>image per commit")]
@@ -26,7 +30,8 @@ flowchart LR
         s3[("S3<br/>Terraform state")]
     end
 
-    client -->|HTTP| alb
+    client -->|HTTPS| cf
+    cf -->|"HTTP + X-Origin-Verify"| alb
     alb -->|"port 8000, only from the ALB SG"| task
     task -->|"HTTPS 443 only"| ext
     ecr -.->|image| task
@@ -38,8 +43,9 @@ flowchart LR
 
 | Layer | What runs there |
 |---|---|
+| **Edge** | CloudFront gives HTTPS with the default certificate and a URL that never changes, in a permanent stack that costs nothing while idle ([ADR-0002](docs/adr/0002-cloudfront-edge-stack.md)). |
 | **Network** | VPC with two public subnets in two Availability Zones and an internet gateway. **No NAT Gateway**: tasks get a public IP for outbound calls, and their security group only accepts traffic from the load balancer ([ADR-0001](docs/adr/0001-public-subnets-without-nat.md)). |
-| **Entry point** | Application Load Balancer: stable address, `/health` checks every 30 s, zero-downtime deployments. |
+| **Entry point** | Application Load Balancer, reachable only from CloudFront: its security group allows CloudFront's managed prefix list, and the listener returns `403` without the secret origin header. It runs `/health` checks every 30 s and enables zero-downtime deployments. |
 | **Compute** | ECS on Fargate: one task, rolling deployments (100 % / 200 %) and the deployment circuit breaker with automatic rollback. |
 | **Secrets** | SSM Parameter Store (`SecureString`), injected into the container at start-up. They are uploaded with a script, never through Terraform, so they never end up in the state. |
 | **Identity** | Separate ECS roles. The execution role can only pull from this ECR repository, write to this log group and read `/booking-bot/*`. The task role has no permissions, because the app calls no AWS APIs. |
@@ -60,7 +66,7 @@ feature branch → pull request → CI ✅ → merge to main → Deploy workflow
    1. GitHub authenticates to AWS with **OIDC**. No AWS keys are stored anywhere: AWS only trusts tokens from this repository's `main` branch and returns credentials for a least-privilege role that expire after one hour.
    2. Build the image tagged with the commit and push it to ECR.
    3. If the infrastructure is up, register a new task definition revision and let ECS roll it out.
-   4. A smoke test checks that `/health` answers with the new version.
+   4. A smoke test calls `/health` through the public CloudFront URL and checks that it answers with the new version.
 
    If the infrastructure is down, the image is pushed and the deployment step is skipped; the next `terraform apply` starts that image.
 
@@ -69,18 +75,19 @@ feature branch → pull request → CI ✅ → merge to main → Deploy workflow
 After a deploy:
 
 ```console
-$ curl http://<alb-dns-name>/health
+$ curl https://d354dom4m7oqh9.cloudfront.net/health
 {"status":"ok","version":"85c6dae"}
 ```
 
 ## Infrastructure as code
 
-There are two independent Terraform stacks, each with its own state in the same S3 bucket:
+There are three independent Terraform stacks, split by lifecycle, each with its own state in the same S3 bucket:
 
 | Stack | Contents | Lifecycle |
 |---|---|---|
-| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role | Created once, never destroyed |
-| [`infra/app`](infra/app) | VPC, subnets, security groups, ALB, IAM roles for the task, log group, ECS cluster, task definition and service (23 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
+| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM | Created once, never destroyed |
+| [`infra/edge`](infra/edge) | CloudFront distribution (HTTPS, caching disabled, secret origin header) pointing at the current ALB | Permanent, free while idle; re-applied after `app` to follow the new ALB |
+| [`infra/app`](infra/app) | VPC, subnets, security groups, ALB with origin check, IAM roles for the task, log group, ECS cluster, task definition and service (24 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
 
 State locking uses S3's native lock file (`use_lockfile`), so no DynamoDB table is needed. Every resource carries `Project`, `ManagedBy` and `Stack` tags for cost allocation.
 
@@ -96,15 +103,16 @@ This runs on a personal budget, so cost shaped the design.
 | Application Load Balancer | $0.025 / h |
 | Fargate task (0.25 vCPU, 0.5 GB) | $0.012 / h |
 | 3 public IPv4 addresses (ALB × 2, task × 1) | $0.015 / h |
+| CloudFront | $0 (free tier: 1 TB and 10 M requests a month) |
 | **Total** | **≈ $0.05 / h** (a 2-hour demo costs about $0.10) |
 
-When the app stack is destroyed, only the bootstrap remains: S3 state, a few images in ECR and free-tier SSM parameters, for a few cents a month. A NAT Gateway (~$35/month) was deliberately left out, and an AWS Budget alerts at 50 % and 100 % of $10/month.
+When the app stack is destroyed, only the bootstrap and the edge remain: S3 state, a few images in ECR, free-tier SSM parameters and an idle CloudFront distribution, for a few cents a month. A NAT Gateway (~$35/month) was deliberately left out, and an AWS Budget alerts at 50 % and 100 % of $10/month.
 
 ## Security
 
 - **No long-lived credentials.** CI/CD uses OIDC, the console and CLI use MFA with temporary credentials, and no IAM user has access keys.
 - **Least privilege everywhere.** Every IAM statement is scoped to this project's resources. The few `"*"` resources are actions that AWS cannot scope, and each one is commented in the code.
-- **Network.** Tasks accept traffic only from the ALB security group and can only go out on port 443.
+- **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. ECR scans every image on push, and CI builds always pull the latest base image.
 
@@ -124,10 +132,14 @@ powershell -ExecutionPolicy Bypass -File ./scripts/put-secrets.ps1
 
 # 3. An image in ECR: merge to main (the Deploy workflow pushes it) or push one manually
 
-# 4. Start the app (~5 min), test it, and tear it down when done
+# 4. Start the app (~5 min), then point the edge at the new ALB
 terraform -chdir=infra/app init
 terraform -chdir=infra/app apply
-curl "$(terraform -chdir=infra/app output -raw app_url)/health"
+terraform -chdir=infra/edge init
+terraform -chdir=infra/edge apply
+curl "$(terraform -chdir=infra/edge output -raw app_url)/health"
+
+# 5. Tear down only the app stack when done (bootstrap and edge stay)
 terraform -chdir=infra/app destroy
 ```
 
@@ -153,7 +165,7 @@ curl -X POST http://localhost:8000/llm/chat/completions \
 
 These are known limitations of this version, and most of them are planned next:
 
-- **HTTPS.** Put CloudFront (or a custom domain with ACM) in front of the ALB. HTTPS is also required for the WhatsApp webhook.
+- **End-to-end encryption.** Viewers get HTTPS, but the CloudFront → ALB hop is HTTP. Use a custom domain with an ACM certificate on the ALB, or CloudFront VPC origins with an internal ALB ([ADR-0002](docs/adr/0002-cloudfront-edge-stack.md)).
 - **Stateless sessions.** Conversation history lives in the container's memory, so it is lost on every deploy and can't be shared between tasks. Move it to DynamoDB with a TTL, then run two tasks across both AZs with target-tracking autoscaling.
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Alerting.** CloudWatch alarms (ALB 5xx, unhealthy hosts) to SNS, structured JSON logs and a runbook.
@@ -164,7 +176,8 @@ These are known limitations of this version, and most of them are planned next:
 
 ```
 app/                    FastAPI bot: Dockerfile, tests, lint config
-infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role
+infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role, origin secret
+infra/edge/             Terraform: CloudFront (HTTPS, stable URL)
 infra/app/              Terraform: network, ALB, IAM, ECS
 .github/workflows/      ci.yml (pull requests) and deploy.yml (main)
 scripts/                put-secrets.ps1: upload app secrets to SSM
