@@ -94,6 +94,6 @@ resource "aws_ecs_service" "app" {
   # Margen al arrancar antes de que cuenten los chequeos de salud del ALB
   health_check_grace_period_seconds = 60
 
-  # El listener del ALB tiene que existir antes de apuntar tareas en él
-  depends_on = [aws_lb_listener.http]
+  # La regla que reenvía al target group tiene que existir antes de apuntar tareas en él
+  depends_on = [aws_lb_listener_rule.from_cloudfront]
 }

@@ -24,7 +24,6 @@ env:
   ECS_SERVICE: booking-bot
   TASK_FAMILY: booking-bot
   CONTAINER_NAME: app
-  ALB_NAME: booking-bot-alb
 
 jobs:
   deploy:
@@ -96,10 +95,13 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           wait-for-service-stability: true
 
+      # Por la URL pública de CloudFront, como un usuario real (el ALB solo atiende
+      # a CloudFront). APP_URL es una variable del repo: la salida app_url de infra/edge
       - name: Smoke test (the new version answers /health)
         if: steps.infra.outputs.running == 'true'
+        env:
+          APP_URL: ${{ vars.APP_URL }}
         run: |
-          HOST=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" \
-                   --query 'LoadBalancers[0].DNSName' --output text)
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 "http://$HOST/health" | tee health.json
+          test -n "$APP_URL" || { echo "::error::Set the APP_URL repository variable (output app_url of infra/edge)"; exit 1; }
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$APP_URL/health" | tee health.json
           grep -q "\"${{ steps.image.outputs.tag }}\"" health.json

@@ -8,7 +8,7 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
 }
 
-output "app_url" {
-  description = "Dirección pública del bot (la del balanceador)"
-  value       = "http://${aws_lb.main.dns_name}"
+output "alb_dns_name" {
+  description = "Dirección del ALB. Solo atiende a CloudFront: la URL pública sale de infra/edge"
+  value       = aws_lb.main.dns_name
 }

@@ -4,18 +4,23 @@
 # ---------- Portero del balanceador ----------
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
-  description = "Load balancer: HTTP from the internet"
+  description = "Load balancer: HTTP only from CloudFront"
   vpc_id      = aws_vpc.main.id
 }
 
-# Entrada: cualquiera de internet, por la puerta 80 (HTTP)
+# Lista oficial de IPs desde las que CloudFront llama a los orígenes (la mantiene AWS)
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+# Entrada: SOLO desde CloudFront, por la puerta 80 (el HTTPS lo pone CloudFront)
 resource "aws_vpc_security_group_ingress_rule" "alb_http_in" {
   security_group_id = aws_security_group.alb.id
-  description       = "HTTP from anywhere"
+  description       = "HTTP only from CloudFront"
   ip_protocol       = "tcp"
   from_port         = 80
   to_port           = 80
-  cidr_ipv4         = "0.0.0.0/0"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
 }
 
 # Salida: solo hacia los contenedores del bot, por su puerta
