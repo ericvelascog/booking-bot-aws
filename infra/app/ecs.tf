@@ -41,6 +41,11 @@ resource "aws_ecs_task_definition" "app" {
 
     portMappings = [{ containerPort = local.app_port, protocol = "tcp" }]
 
+    # Variables normales (no secretas): en qué tabla guardar las conversaciones
+    environment = [
+      { name = "SESSIONS_TABLE", value = aws_dynamodb_table.sessions.name },
+    ]
+
     # El equivalente a --env-file: ECS lee cada llave de SSM y se la da al
     # contenedor como variable de entorno. Para cada nombre de la lista,
     # una entrada { name, valueFrom }.
