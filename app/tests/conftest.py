@@ -15,3 +15,7 @@ os.environ.setdefault("WHATSAPP_TOKEN", "test-token")
 os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "000000")
 os.environ.setdefault("WEBHOOK_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+# Las conversaciones se guardan en memoria salvo en los tests que piden
+# DynamoDB (y esos usan moto, una DynamoDB de mentira)
+os.environ.pop("SESSIONS_TABLE", None)
