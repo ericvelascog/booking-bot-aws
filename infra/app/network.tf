@@ -48,3 +48,15 @@ resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
+
+# Atajo privado hacia DynamoDB (gateway endpoint): añade al cartel una ruta
+# más concreta, de modo que el tráfico hacia DynamoDB va por la red de AWS y
+# no por internet. Los gateway endpoints son gratis.
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${local.region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.public.id]
+
+  tags = { Name = "${local.name}-dynamodb" }
+}

@@ -8,6 +8,11 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
 }
 
+output "sessions_table" {
+  description = "Tabla de DynamoDB con las conversaciones"
+  value       = aws_dynamodb_table.sessions.name
+}
+
 output "alb_dns_name" {
   description = "Dirección del ALB. Solo atiende a CloudFront: la URL pública sale de infra/edge"
   value       = aws_lb.main.dns_name

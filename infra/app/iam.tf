@@ -64,9 +64,23 @@ resource "aws_iam_role_policy" "execution" {
 }
 
 # ---------- Task role: la acreditación de nuestro código ----------
-# Sin permisos: la app no llama a ninguna API de AWS.
-# (En la v1, con las sesiones en DynamoDB, tendrá permiso solo para su tabla.)
+# Lo usa nuestro código (boto3) cuando llama a AWS. Lo único que necesita es
+# leer, guardar y borrar conversaciones en su tabla: nada más.
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+}
+
+data "aws_iam_policy_document" "task" {
+  statement {
+    sid       = "ReadWriteOnlyOurSessionsTable"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    resources = [aws_dynamodb_table.sessions.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "task" {
+  name   = "sessions-table-only"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.task.json
 }
