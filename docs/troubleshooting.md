@@ -45,3 +45,18 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** clock skew. The login flow sends short-lived, time-stamped proofs signed with the local clock; with almost two minutes of drift they arrive already "expired". The error message points at the token, not at the clock.
 - **Fix:** enabled automatic time and synced the Windows clock (drift 0 s), then `aws login` worked at the first try.
 - **Lesson:** when credentials are rejected as expired right after being issued, check the clock before anything else.
+
+## 006 — First real WhatsApp message on AWS: the bot answers "ha ocurrido un error" (2026-11-07)
+- **Symptom:** after pointing the Meta webhook at CloudFront, the verification passed, but the first real message got the bot's generic fallback reply: *"Lo siento, ha ocurrido un error..."*.
+- **Diagnosis:**
+  - `aws logs tail /ecs/booking-bot --since 20m` showed `GET /webhook ... 200` (Meta's verification) and `POST /webhook ... 200` (the message). The whole path, Meta → CloudFront → ALB → Fargate, worked.
+  - The next line explained the failure: `Error code: 401 ... authentication_error, invalid x-api-key` from the Anthropic API.
+  - I compared the key stored in SSM with the one in `app/.env` by SHA-256 fingerprint, without printing either. They were identical and well formed (`sk-ant-` prefix, no quotes or whitespace), so the upload was not the problem.
+  - Calling the Anthropic API directly from my PC with the same key also returned `401`.
+  - `git log --all -S 'sk-ant-'` returned nothing: the key had never been committed, so this was not a leak from this repo.
+- **Root cause:** the API key (from the thesis days) had been revoked in the Anthropic Console. Nothing in AWS was wrong.
+- **Fix:**
+  - Created a new key and checked it against the API (`200`) before uploading it.
+  - Uploaded it with `scripts/put-secrets.ps1`.
+  - Ran `aws ecs update-service --cluster booking-bot --service booking-bot --force-new-deployment`. ECS injects SSM secrets only when a task starts, so the running task kept the old value until it was replaced. The rolling deployment did that with no downtime.
+- **Lesson:** when a call to a third-party API fails with `401`, test the credential directly against the provider before touching the infrastructure. And rotating a secret in SSM is not enough on its own: ECS tasks need a new deployment to pick it up.

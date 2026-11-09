@@ -9,6 +9,16 @@ The bot is a FastAPI service that books, lists and cancels appointments over Wha
 
 **Live URL:** https://d354dom4m7oqh9.cloudfront.net/health. The backend is started on demand to keep costs down, so a `502` means it is currently off.
 
+## Demo
+
+https://github.com/user-attachments/assets/687a869e-f00c-4a1b-b512-95f72e912d22
+
+A real WhatsApp conversation (in Spanish) booking a physiotherapy session, recorded against this infrastructure:
+
+1. `/health` through CloudFront over HTTPS, returning the commit that is running.
+2. The chat on the left; on the right, the container's logs streamed from CloudWatch (`aws logs tail --follow`). Each message arrives as a `POST /webhook` from Meta.
+3. The appointment the bot created in Google Calendar.
+
 ## Architecture
 
 ```mermaid
