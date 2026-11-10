@@ -37,7 +37,8 @@ flowchart LR
         ddb[("DynamoDB<br/>conversations · TTL 6 h")]
         ecr[("ECR<br/>image per commit")]
         ssm[("SSM Parameter Store<br/>SecureString secrets")]
-        cw[("CloudWatch Logs")]
+        cw[("CloudWatch<br/>logs · alarms")]
+        sns[("SNS<br/>email alerts")]
         s3[("S3<br/>Terraform state")]
     end
 
@@ -49,6 +50,7 @@ flowchart LR
     ecr -.->|image| task
     ssm -.->|"secrets as env vars"| task
     task -.->|logs| cw
+    cw -.->|"alarm / OK"| sns
     gh -->|"OIDC: temporary credentials"| ecr
     gh -->|"new task definition: rolling deploy"| task
 ```
@@ -62,7 +64,7 @@ flowchart LR
 | **State** | The service is **stateless**. Conversation history is kept in DynamoDB (on-demand, strongly consistent reads, deleted by TTL after 6 hours), so any task can answer any message and a task can die without losing a conversation ([ADR-0003](docs/adr/0003-stateless-sessions-in-dynamodb.md)). |
 | **Secrets** | SSM Parameter Store (`SecureString`), injected into the container at start-up. They are uploaded with a script, never through Terraform, so they never end up in the state. |
 | **Identity** | Separate ECS roles. The execution role can only pull from this ECR repository, write to this log group and read `/booking-bot/*`. The task role can only get, put and delete items in the sessions table: no `Scan`, no other tables. |
-| **Observability** | CloudWatch Logs (7-day retention). `/health` reports the deployed version (the commit SHA). |
+| **Observability** | CloudWatch Logs (7-day retention). `/health` reports the deployed version (the commit SHA). Three alarms email me through SNS when they fire and when they recover: 5xx responses, unhealthy tasks, and failed WhatsApp replies. The last one comes from a log metric filter, because those failures happen after the webhook has already returned `200`. Each alarm links to its section of the [runbook](docs/runbook.md). |
 
 ## How a change reaches production
 
@@ -105,9 +107,9 @@ There are three independent Terraform stacks, split by lifecycle, each with its 
 
 | Stack | Contents | Lifecycle |
 |---|---|---|
-| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM | Created once, never destroyed |
+| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM, SNS topic for alarms (the email address comes from a git-ignored `terraform.tfvars`) | Created once, never destroyed |
 | [`infra/edge`](infra/edge) | CloudFront distribution (HTTPS, caching disabled, secret origin header) pointing at the current ALB | Permanent, free while idle; re-applied after `app` to follow the new ALB |
-| [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service and autoscaling (29 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
+| [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service, autoscaling and alarms (33 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
 
 State locking uses S3's native lock file (`use_lockfile`), so locking needs no DynamoDB table. Every resource carries `Project`, `ManagedBy` and `Stack` tags for cost allocation.
 
@@ -191,7 +193,7 @@ These are known limitations of this version, and most of them are planned next:
 - **Concurrent writes to a conversation.** Each message is a read followed by a full write, so two messages from the same person at the same instant could overwrite each other. Use optimistic locking with conditional writes ([ADR-0003](docs/adr/0003-stateless-sessions-in-dynamodb.md)).
 - **Scaling target from a load test.** The 120 requests per task per minute is an estimate. Measure where latency degrades and set the target below it ([ADR-0004](docs/adr/0004-autoscale-on-requests-per-task.md)).
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
-- **Alerting.** CloudWatch alarms (ALB 5xx, unhealthy hosts) to SNS, structured JSON logs and a runbook.
+- **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
 - **Pipeline security.** `terraform plan` posted on pull requests, IaC and image scanning (checkov, Trivy), and CloudTrail.
 
@@ -206,6 +208,7 @@ infra/app/              Terraform: network, ALB, IAM, ECS, DynamoDB, autoscaling
 scripts/                put-secrets.ps1: upload app secrets to SSM
 docs/adr/               Architecture decision records
 docs/controls.md        IT general controls mapping (evidence and gaps)
+docs/runbook.md         What to do when each alarm fires
 docs/troubleshooting.md Real problems hit while building this, and how they were diagnosed
 ```
 

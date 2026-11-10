@@ -42,5 +42,6 @@ How this project implements the classic ITGC domains (access, change management,
 | OP-04 | Vulnerabilities in deployed software are identified | ECR scans every image on push, and every build pulls the latest base image so OS patches are picked up. | ECR scan findings; `--pull` in the Deploy workflow |
 | OP-05 | Cost is monitored | An AWS Budget alerts at 50 % and 100 % of $10/month (actual) and at 100 % (forecast). Credits are excluded, so usage is visible even while credits pay for it. | Billing → Budgets → `monthly-cost-10usd` |
 | OP-06 | Incidents are analysed and lessons recorded | Every real problem is written down with symptom, diagnosis, root cause, fix and lesson. | [`docs/troubleshooting.md`](troubleshooting.md) |
+| OP-07 | Failures are detected and someone is notified | CloudWatch alarms on 5xx responses, unhealthy tasks and failed WhatsApp replies (log metric filter) email the operator through SNS, on alarm and on recovery. Each alarm links to a runbook section. The alarms were tested by triggering them. | [`infra/app/alarms.tf`](../infra/app/alarms.tf), [`docs/runbook.md`](runbook.md) |
 
-**Gaps:** there is no alerting yet (nobody is notified if the service fails), no dedicated CloudTrail trail (only the default 90-day event history) and no runbook. CloudWatch alarms to SNS, a CloudTrail trail and a runbook are on the roadmap.
+**Gaps:** there is no dedicated CloudTrail trail (only the default 90-day event history), and alerts go to a single person's email, with no on-call rotation. A CloudTrail trail is on the roadmap.
