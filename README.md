@@ -32,8 +32,9 @@ flowchart LR
     subgraph aws["AWS · eu-west-1"]
         subgraph vpc["VPC 10.0.0.0/16 · 2 public subnets in 2 AZs"]
             alb["Application Load Balancer<br/>only CloudFront + secret header"]
-            task["ECS Fargate task<br/>FastAPI :8000 · 0.25 vCPU · 0.5 GB"]
+            task["ECS Fargate · 2–4 tasks across 2 AZs<br/>FastAPI :8000 · 0.25 vCPU · 0.5 GB each"]
         end
+        ddb[("DynamoDB<br/>conversations · TTL 6 h")]
         ecr[("ECR<br/>image per commit")]
         ssm[("SSM Parameter Store<br/>SecureString secrets")]
         cw[("CloudWatch Logs")]
@@ -44,6 +45,7 @@ flowchart LR
     cf -->|"HTTP + X-Origin-Verify"| alb
     alb -->|"port 8000, only from the ALB SG"| task
     task -->|"HTTPS 443 only"| ext
+    task -->|"gateway endpoint"| ddb
     ecr -.->|image| task
     ssm -.->|"secrets as env vars"| task
     task -.->|logs| cw
@@ -56,9 +58,10 @@ flowchart LR
 | **Edge** | CloudFront gives HTTPS with the default certificate and a URL that never changes, in a permanent stack that costs nothing while idle ([ADR-0002](docs/adr/0002-cloudfront-edge-stack.md)). |
 | **Network** | VPC with two public subnets in two Availability Zones and an internet gateway. **No NAT Gateway**: tasks get a public IP for outbound calls, and their security group only accepts traffic from the load balancer ([ADR-0001](docs/adr/0001-public-subnets-without-nat.md)). |
 | **Entry point** | Application Load Balancer, reachable only from CloudFront: its security group allows CloudFront's managed prefix list, and the listener returns `403` without the secret origin header. It runs `/health` checks every 30 s and enables zero-downtime deployments. |
-| **Compute** | ECS on Fargate: one task, rolling deployments (100 % / 200 %) and the deployment circuit breaker with automatic rollback. |
+| **Compute** | ECS on Fargate: **two tasks, one per Availability Zone**, with target-tracking autoscaling between 2 and 4 tasks on requests per task ([ADR-0004](docs/adr/0004-autoscale-on-requests-per-task.md)). Deployments are rolling (100 % / 200 %), and the circuit breaker rolls back automatically. |
+| **State** | The service is **stateless**. Conversation history is kept in DynamoDB (on-demand, strongly consistent reads, deleted by TTL after 6 hours), so any task can answer any message and a task can die without losing a conversation ([ADR-0003](docs/adr/0003-stateless-sessions-in-dynamodb.md)). |
 | **Secrets** | SSM Parameter Store (`SecureString`), injected into the container at start-up. They are uploaded with a script, never through Terraform, so they never end up in the state. |
-| **Identity** | Separate ECS roles. The execution role can only pull from this ECR repository, write to this log group and read `/booking-bot/*`. The task role has no permissions, because the app calls no AWS APIs. |
+| **Identity** | Separate ECS roles. The execution role can only pull from this ECR repository, write to this log group and read `/booking-bot/*`. The task role can only get, put and delete items in the sessions table: no `Scan`, no other tables. |
 | **Observability** | CloudWatch Logs (7-day retention). `/health` reports the deployed version (the commit SHA). |
 
 ## How a change reaches production
@@ -89,6 +92,13 @@ $ curl https://d354dom4m7oqh9.cloudfront.net/health
 {"status":"ok","version":"85c6dae"}
 ```
 
+## Resilience, tested
+
+Two tests on the running service (2026-11-10):
+
+1. **A task dies under traffic.** While a loop called `/health` twice a second, I stopped one of the two tasks with `aws ecs stop-task`. **No request failed.** The ALB deregistered the task and drained it before it stopped, and ECS started a replacement one second later.
+2. **The task holding a conversation dies.** I told the bot my name on WhatsApp. The logs show that message was handled by the task being stopped. The next message was handled by the other task, and the bot still knew my name, because the conversation lives in DynamoDB, not in the container.
+
 ## Infrastructure as code
 
 There are three independent Terraform stacks, split by lifecycle, each with its own state in the same S3 bucket:
@@ -97,9 +107,9 @@ There are three independent Terraform stacks, split by lifecycle, each with its 
 |---|---|---|
 | [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM | Created once, never destroyed |
 | [`infra/edge`](infra/edge) | CloudFront distribution (HTTPS, caching disabled, secret origin header) pointing at the current ALB | Permanent, free while idle; re-applied after `app` to follow the new ALB |
-| [`infra/app`](infra/app) | VPC, subnets, security groups, ALB with origin check, IAM roles for the task, log group, ECS cluster, task definition and service (24 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
+| [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service and autoscaling (29 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
 
-State locking uses S3's native lock file (`use_lockfile`), so no DynamoDB table is needed. Every resource carries `Project`, `ManagedBy` and `Stack` tags for cost allocation.
+State locking uses S3's native lock file (`use_lockfile`), so locking needs no DynamoDB table. Every resource carries `Project`, `ManagedBy` and `Stack` tags for cost allocation.
 
 ![VPC resource map](docs/images/vpc-resource-map.png)
 ![ECS service](docs/images/ecs-service.png)
@@ -111,10 +121,11 @@ This runs on a personal budget, so cost shaped the design.
 | While the app stack is up | Approx. (eu-west-1) |
 |---|---|
 | Application Load Balancer | $0.025 / h |
-| Fargate task (0.25 vCPU, 0.5 GB) | $0.012 / h |
-| 3 public IPv4 addresses (ALB × 2, task × 1) | $0.015 / h |
+| 2 Fargate tasks (0.25 vCPU, 0.5 GB each) | $0.024 / h |
+| 4 public IPv4 addresses (ALB × 2, tasks × 2) | $0.020 / h |
+| DynamoDB (on-demand) and the gateway endpoint | ≈ $0 (a few requests per message; gateway endpoints are free) |
 | CloudFront | $0 (free tier: 1 TB and 10 M requests a month) |
-| **Total** | **≈ $0.05 / h** (a 2-hour demo costs about $0.10) |
+| **Total** | **≈ $0.07 / h** (a 2-hour demo costs about $0.14) |
 
 When the app stack is destroyed, only the bootstrap and the edge remain: S3 state, a few images in ECR, free-tier SSM parameters and an idle CloudFront distribution, for a few cents a month. A NAT Gateway (~$35/month) was deliberately left out, and an AWS Budget alerts at 50 % and 100 % of $10/month.
 
@@ -122,7 +133,8 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 
 - **No long-lived credentials.** CI/CD uses OIDC, the console and CLI use MFA with temporary credentials, and no IAM user has access keys.
 - **Least privilege everywhere.** Every IAM statement is scoped to this project's resources. The few `"*"` resources are actions that AWS cannot scope, and each one is commented in the code.
-- **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443.
+- **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443. Their traffic to DynamoDB goes through a gateway endpoint and never leaves the AWS network.
+- **Personal data** (phone numbers and conversations) is encrypted at rest and deleted automatically after six hours of inactivity.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. ECR scans every image on push, and CI builds always pull the latest base image.
 
@@ -176,7 +188,8 @@ curl -X POST http://localhost:8000/llm/chat/completions \
 These are known limitations of this version, and most of them are planned next:
 
 - **End-to-end encryption.** Viewers get HTTPS, but the CloudFront → ALB hop is HTTP. Use a custom domain with an ACM certificate on the ALB, or CloudFront VPC origins with an internal ALB ([ADR-0002](docs/adr/0002-cloudfront-edge-stack.md)).
-- **Stateless sessions.** Conversation history lives in the container's memory, so it is lost on every deploy and can't be shared between tasks. Move it to DynamoDB with a TTL, then run two tasks across both AZs with target-tracking autoscaling.
+- **Concurrent writes to a conversation.** Each message is a read followed by a full write, so two messages from the same person at the same instant could overwrite each other. Use optimistic locking with conditional writes ([ADR-0003](docs/adr/0003-stateless-sessions-in-dynamodb.md)).
+- **Scaling target from a load test.** The 120 requests per task per minute is an estimate. Measure where latency degrades and set the target below it ([ADR-0004](docs/adr/0004-autoscale-on-requests-per-task.md)).
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Alerting.** CloudWatch alarms (ALB 5xx, unhealthy hosts) to SNS, structured JSON logs and a runbook.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
@@ -188,7 +201,7 @@ These are known limitations of this version, and most of them are planned next:
 app/                    FastAPI bot: Dockerfile, tests, lint config
 infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role, origin secret
 infra/edge/             Terraform: CloudFront (HTTPS, stable URL)
-infra/app/              Terraform: network, ALB, IAM, ECS
+infra/app/              Terraform: network, ALB, IAM, ECS, DynamoDB, autoscaling
 .github/workflows/      ci.yml (pull requests) and deploy.yml (main)
 scripts/                put-secrets.ps1: upload app secrets to SSM
 docs/adr/               Architecture decision records
@@ -198,4 +211,4 @@ docs/troubleshooting.md Real problems hit while building this, and how they were
 
 ## About
 
-Built by [Eric Velasco](https://github.com/ericvelascog) while preparing for the AWS Solutions Architect – Associate exam, with Claude Code as a pair programmer. The architecture decisions and trade-offs are documented in [`docs/adr`](docs/adr), and the problems I hit along the way are in [`docs/troubleshooting.md`](docs/troubleshooting.md).
+Built by [Eric Velasco](https://github.com/ericvelascog), AWS Certified Solutions Architect – Associate, with Claude Code as a pair programmer. The architecture decisions and trade-offs are documented in [`docs/adr`](docs/adr), and the problems I hit along the way are in [`docs/troubleshooting.md`](docs/troubleshooting.md).

@@ -60,3 +60,13 @@ Real problems found while building this project, written down right after fixing
   - Uploaded it with `scripts/put-secrets.ps1`.
   - Ran `aws ecs update-service --cluster booking-bot --service booking-bot --force-new-deployment`. ECS injects SSM secrets only when a task starts, so the running task kept the old value until it was replaced. The rolling deployment did that with no downtime.
 - **Lesson:** when a call to a third-party API fails with `401`, test the credential directly against the provider before touching the infrastructure. And rotating a secret in SSM is not enough on its own: ECS tasks need a new deployment to pick it up.
+
+## 007 — After merging the DynamoDB code, the bot still forgot conversations (2026-11-09)
+- **Symptom:** after merging the change that stores conversations in DynamoDB (PR #14), a WhatsApp test still behaved like the old version. After a task restart, the bot no longer knew the user's name, and the sessions table was empty.
+- **Diagnosis:**
+  - `/health` still returned the previous commit, so the new code was not running.
+  - The Deploy run for the merge had failed in about a minute, with **0 jobs** executed and the message *"This run likely failed because of a workflow file issue"*. The workflow file had not changed, and its previous run had succeeded.
+  - GitHub's status page showed an ongoing *"Incident with Actions and Checks API"*, which had started nine minutes before the merge.
+- **Root cause:** a GitHub Actions outage. The run could not start any job. Nothing was wrong in the workflow, the code or AWS.
+- **Fix:** once GitHub was recovering, I started the Deploy manually with `gh workflow run deploy.yml --ref main` (the workflow has a `workflow_dispatch` trigger for this). `/health` then reported the new commit, and the next message created an item in the table.
+- **Lesson:** check what is actually deployed before testing a change. That is exactly why `/health` reports the commit. When a workflow fails with no jobs and no logs, check the provider's status page before debugging the YAML.

@@ -65,13 +65,22 @@ resource "aws_ecs_task_definition" "app" {
   }])
 }
 
-# El encargado: mantiene 1 bot siempre encendido y lo apunta en el ALB
+# El encargado: mantiene los bots encendidos y los apunta en el ALB
 resource "aws_ecs_service" "app" {
   name            = local.name
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = 1
   launch_type     = "FARGATE"
+
+  # 2 tareas, una en cada zona: si se cae una tarea (o una zona entera), la
+  # otra sigue atendiendo. Funciona porque el bot ya no guarda nada dentro:
+  # las conversaciones están en DynamoDB. Es el número de partida; luego lo
+  # mueve el autoescalado (autoscaling.tf), entre 2 y 4.
+  desired_count = 2
+
+  # Si las tareas quedan descompensadas entre zonas (por ejemplo, tras caerse
+  # una zona y volver), ECS las reparte otra vez solo
+  availability_zone_rebalancing = "ENABLED"
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
@@ -101,4 +110,10 @@ resource "aws_ecs_service" "app" {
 
   # La regla que reenvía al target group tiene que existir antes de apuntar tareas en él
   depends_on = [aws_lb_listener_rule.from_cloudfront]
+
+  # El autoescalado cambia desired_count por su cuenta. Sin esto, cada
+  # `terraform apply` lo devolvería a 2 aunque en ese momento hicieran falta 4.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
 }
