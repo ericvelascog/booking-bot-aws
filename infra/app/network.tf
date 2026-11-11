@@ -7,6 +7,16 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = { Name = "${local.name}-vpc" }
+
+  # checkov:skip=CKV2_AWS_11:Flow logs are on the production list; the security groups only allow CloudFront to ALB to tasks
+}
+
+# Toda VPC trae un portero "por defecto" que deja pasar todo el tráfico entre
+# quienes lo usan. Nosotros no lo usamos, pero si algún día se creara algo sin
+# elegir portero, le tocaría este. Al declararlo sin ninguna norma, Terraform
+# le quita las que trae: no deja pasar nada (avisado por checkov)
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
 }
 
 # La puerta de la VPC hacia internet

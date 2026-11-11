@@ -8,6 +8,12 @@ resource "aws_s3_bucket" "tfstate" {
   lifecycle {
     prevent_destroy = true
   }
+
+  # Avisos de checkov aceptados a propósito. Motivos: docs/security-scanning.md
+  # checkov:skip=CKV_AWS_145:Encrypted with SSE-S3 (AES-256); a customer managed KMS key costs 1 USD per month
+  # checkov:skip=CKV_AWS_144:Versioning and prevent_destroy protect the state; a replica in another region doubles the cost for a demo
+  # checkov:skip=CKV_AWS_18:Only the administrator and the pipeline use the bucket; CloudTrail data events are on the production list
+  # checkov:skip=CKV2_AWS_62:Nothing needs to react when the state changes
 }
 
 # Versionado: cada cambio del estado guarda la versión anterior
@@ -28,6 +34,38 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
       sse_algorithm = "AES256"
     }
   }
+}
+
+# Limpieza automática. El versionado guarda para siempre cada versión antigua
+# del estado, y también la de cada candado (.tflock): cada plan o apply crea y
+# borra uno. Se borran las versiones antiguas de más de 90 días, conservando
+# siempre las 10 más recientes de cada archivo por si hay que volver atrás.
+resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+
+  rule {
+    id     = "expire-old-versions"
+    status = "Enabled"
+    filter {} # todo el bucket
+
+    noncurrent_version_expiration {
+      noncurrent_days           = 90
+      newer_noncurrent_versions = 10
+    }
+
+    # Las "marcas de borrado" que se quedan solas cuando ya no queda ninguna versión
+    expiration {
+      expired_object_delete_marker = true
+    }
+
+    # Subidas a medias, por ejemplo de un apply que se cortó
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  # Las reglas de versiones antiguas necesitan el versionado ya activado
+  depends_on = [aws_s3_bucket_versioning.tfstate]
 }
 
 # Nadie de internet puede leerlo, aunque alguien se equivoque con los permisos

@@ -12,11 +12,16 @@ data "aws_ecr_image" "latest" {
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${local.name}"
   retention_in_days = 7
+
+  # checkov:skip=CKV_AWS_338:7 days on purpose: the logs contain phone numbers, so they are kept no longer than needed (GDPR data minimisation)
+  # checkov:skip=CKV_AWS_158:CloudWatch encrypts logs at rest by default; a customer managed key costs 1 USD per month
 }
 
 # El edificio. Con Fargate no hay servidores que gestionar: es gratis
 resource "aws_ecs_cluster" "main" {
   name = local.name
+
+  # checkov:skip=CKV_AWS_65:The free service metrics (CPU, memory) and the ALB metrics are enough for 2 to 4 tasks
 }
 
 # La ficha técnica: es el `docker run` del 6-oct, pero escrito para AWS
@@ -87,6 +92,8 @@ resource "aws_ecs_service" "app" {
     security_groups  = [aws_security_group.app.id]
     assign_public_ip = true # para salir a internet sin NAT (ADR-0001)
   }
+
+  # checkov:skip=CKV_AWS_333:Public IP instead of a NAT Gateway (about 35 USD per month); inbound only from the ALB security group (ADR-0001)
 
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn

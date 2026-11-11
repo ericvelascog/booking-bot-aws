@@ -15,6 +15,7 @@ resource "aws_sns_topic" "alerts" {
   # Sin cifrado KMS, a propósito: CloudWatch no puede publicar en un tema cifrado
   # con la clave gestionada por AWS (aws/sns) y las alarmas fallarían en silencio.
   # Haría falta una clave propia (1 $/mes), y los avisos no llevan datos sensibles.
+  # checkov:skip=CKV_AWS_26:CloudWatch cannot publish to a topic encrypted with aws/sns; a customer managed key costs 1 USD per month and alerts carry no sensitive data
 }
 
 resource "aws_sns_topic_subscription" "alerts_email" {

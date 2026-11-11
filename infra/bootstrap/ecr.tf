@@ -12,6 +12,8 @@ resource "aws_ecr_repository" "app" {
   image_scanning_configuration {
     scan_on_push = true
   }
+
+  # checkov:skip=CKV_AWS_136:ECR encrypts images at rest with AES-256 by default, and the image has no secrets (they come from SSM at start-up)
 }
 
 # Guardar solo las 5 imágenes más recientes: las viejas se borran solas

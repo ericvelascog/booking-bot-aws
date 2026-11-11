@@ -17,4 +17,6 @@ resource "aws_ssm_parameter" "origin_verify" {
   description = "Header value CloudFront sends and the ALB requires"
   type        = "SecureString"
   value       = random_password.origin_verify.result
+
+  # checkov:skip=CKV_AWS_337:Already KMS-encrypted with the AWS managed key aws/ssm; a customer managed key costs 1 USD per month
 }

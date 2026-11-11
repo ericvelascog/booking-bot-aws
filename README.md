@@ -72,11 +72,12 @@ flowchart LR
 feature branch → pull request → CI ✅ → merge to main → Deploy workflow → new version live (~5 min)
 ```
 
-1. **CI on every pull request** ([`ci.yml`](.github/workflows/ci.yml)). Two parallel jobs:
+1. **CI on every pull request** ([`ci.yml`](.github/workflows/ci.yml)). Three parallel jobs:
    - the app: `ruff`, `pytest` and `docker build` on Python 3.12;
-   - the infrastructure: `terraform fmt -check` and `validate`.
+   - the infrastructure: `terraform fmt -check` and `validate`;
+   - security: **checkov** scans the Terraform, the Dockerfile and the workflows for misconfigurations, and the repository for committed secrets ([`docs/security-scanning.md`](docs/security-scanning.md)).
 
-   `main` is protected: pull requests only, both checks required, no exceptions for admins.
+   `main` is protected: pull requests only, all three checks required, no exceptions for admins.
 2. **CD on every merge to `main`** ([`deploy.yml`](.github/workflows/deploy.yml)):
    1. GitHub authenticates to AWS with **OIDC**. No AWS keys are stored anywhere: AWS only trusts tokens from this repository's `main` branch and returns credentials for a least-privilege role that expire after one hour.
    2. Build the image tagged with the commit and push it to ECR.
@@ -109,7 +110,7 @@ There are three independent Terraform stacks, split by lifecycle, each with its 
 |---|---|---|
 | [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM, SNS topic for alarms (the email address comes from a git-ignored `terraform.tfvars`) | Created once, never destroyed |
 | [`infra/edge`](infra/edge) | CloudFront distribution (HTTPS, caching disabled, secret origin header) pointing at the current ALB | Permanent, free while idle; re-applied after `app` to follow the new ALB |
-| [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service, autoscaling and alarms (33 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
+| [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service, autoscaling and alarms (34 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
 
 State locking uses S3's native lock file (`use_lockfile`), so locking needs no DynamoDB table. Every resource carries `Project`, `ManagedBy` and `Stack` tags for cost allocation.
 
@@ -139,6 +140,7 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 - **Personal data** (phone numbers and conversations) is encrypted at rest and deleted automatically after six hours of inactivity.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. ECR scans every image on push, and CI builds always pull the latest base image.
+- **Scanned on every pull request.** checkov blocks the merge on any finding that is not fixed or accepted with a written reason. The first scan found 35: 4 were fixed and 31 accepted, each with its reason in the code and in [`docs/security-scanning.md`](docs/security-scanning.md).
 
 These controls are mapped to IT general controls (access, change management, operations), with evidence and known gaps, in [`docs/controls.md`](docs/controls.md).
 
@@ -195,7 +197,8 @@ These are known limitations of this version, and most of them are planned next:
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
-- **Pipeline security.** `terraform plan` posted on pull requests, IaC and image scanning (checkov, Trivy), and CloudTrail.
+- **Pipeline security.** `terraform plan` posted on pull requests, image scanning with Trivy, and CloudTrail.
+- **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 
 ## Repository layout
 
@@ -209,6 +212,7 @@ scripts/                put-secrets.ps1: upload app secrets to SSM
 docs/adr/               Architecture decision records
 docs/controls.md        IT general controls mapping (evidence and gaps)
 docs/runbook.md         What to do when each alarm fires
+docs/security-scanning.md  What checkov scans, and why each accepted finding was accepted
 docs/troubleshooting.md Real problems hit while building this, and how they were diagnosed
 ```
 
