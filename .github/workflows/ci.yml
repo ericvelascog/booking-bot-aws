@@ -73,3 +73,26 @@ jobs:
         run: |
           terraform -chdir=infra/edge init -backend=false -input=false
           terraform -chdir=infra/edge validate
+
+  security:
+    name: Security scan (checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the code
+        uses: actions/checkout@v7
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Versión fija: una versión nueva de checkov trae reglas nuevas, y eso debe
+      # llegar con un PR que la suba, no romper la CI un día cualquiera
+      - name: Install checkov
+        run: pip install checkov==3.4.3
+
+      # Revisa el Terraform, el Dockerfile, los workflows y busca claves olvidadas.
+      # Falla si encuentra algo que no esté arreglado ni aceptado con un motivo
+      # (los comentarios checkov:skip). Cada aviso aceptado: docs/security-scanning.md
+      - name: Scan the repository
+        run: checkov --directory . --framework terraform dockerfile github_actions secrets --compact --quiet

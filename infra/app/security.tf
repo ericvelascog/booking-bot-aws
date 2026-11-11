@@ -21,6 +21,8 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http_in" {
   from_port         = 80
   to_port           = 80
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+
+  # checkov:skip=CKV_AWS_260:False positive: the source is CloudFront's managed prefix list, not 0.0.0.0/0
 }
 
 # Salida: solo hacia los contenedores del bot, por su puerta

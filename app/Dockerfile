@@ -1,6 +1,8 @@
 # Slim Debian base: small, but still glibc, so every dependency installs from prebuilt wheels
 FROM python:3.12-slim
 
+# checkov:skip=CKV_DOCKER_2:ECS does not use the Docker HEALTHCHECK; the ALB checks GET /health every 30 s
+
 # No .pyc files on disk; logs go straight to stdout (and from there to CloudWatch)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

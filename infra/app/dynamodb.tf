@@ -24,4 +24,6 @@ resource "aws_dynamodb_table" "sessions" {
   # Sin copias de seguridad (point-in-time recovery): son datos que caducan en
   # 6 horas y la tabla vive en el stack que se destruye en cada sesión.
   # El cifrado en reposo está siempre activado en DynamoDB, con una clave de AWS.
+  # checkov:skip=CKV_AWS_28:Sessions expire after 6 hours and the bookings live in Google Calendar, so there is nothing to restore
+  # checkov:skip=CKV_AWS_119:Encrypted at rest with an AWS owned key; a customer managed key costs 1 USD per month
 }

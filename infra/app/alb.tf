@@ -7,6 +7,16 @@ resource "aws_lb" "main" {
   internal           = false # de cara a internet
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
+
+  # Tira las cabeceras HTTP con nombres no válidos antes de pasárselas al bot.
+  # Defensa gratuita contra ataques de "request smuggling" (avisado por checkov)
+  drop_invalid_header_fields = true
+
+  # Avisos de checkov aceptados a propósito. Motivos: docs/security-scanning.md
+  # checkov:skip=CKV_AWS_150:Ephemeral stack, destroyed after every session, so deletion protection would block terraform destroy
+  # checkov:skip=CKV_AWS_91:Requests are already logged by the app in CloudWatch; ALB access logs are on the production list
+  # checkov:skip=CKV2_AWS_20:No own domain, so no certificate for the ALB; HTTPS ends at CloudFront (ADR-0002)
+  # checkov:skip=CKV2_AWS_28:WAF has a fixed monthly cost; the ALB only accepts CloudFront with the secret origin header
 }
 
 # La lista de "consultas": los contenedores que pueden atender y cómo se
@@ -29,6 +39,8 @@ resource "aws_lb_target_group" "app" {
   # Al apagar un contenedor, la recepción deja de mandarle visitas y le da
   # 30 s para terminar las que tiene (por defecto son 5 minutos)
   deregistration_delay = 30
+
+  # checkov:skip=CKV_AWS_378:HTTP inside the VPC, from the ALB to the tasks; HTTPS ends at CloudFront (ADR-0002)
 }
 
 # La "contraseña" de CloudFront (creada en infra/bootstrap)
@@ -41,6 +53,9 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+
+  # checkov:skip=CKV_AWS_2:No own domain, so no certificate for the ALB; viewers use HTTPS on CloudFront (ADR-0002)
+  # checkov:skip=CKV_AWS_103:No TLS listener on the ALB, same reason as CKV_AWS_2
 
   default_action {
     type = "fixed-response"
