@@ -12,7 +12,7 @@ resource "aws_s3_bucket" "tfstate" {
   # Avisos de checkov aceptados a propósito. Motivos: docs/security-scanning.md
   # checkov:skip=CKV_AWS_145:Encrypted with SSE-S3 (AES-256); a customer managed KMS key costs 1 USD per month
   # checkov:skip=CKV_AWS_144:Versioning and prevent_destroy protect the state; a replica in another region doubles the cost for a demo
-  # checkov:skip=CKV_AWS_18:Only the administrator and the pipeline use the bucket; CloudTrail data events are on the production list
+  # checkov:skip=CKV_AWS_18:Every read and write of the state is recorded as a CloudTrail data event instead (cloudtrail.tf)
   # checkov:skip=CKV2_AWS_62:Nothing needs to react when the state changes
 }
 
