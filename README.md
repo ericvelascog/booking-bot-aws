@@ -108,7 +108,7 @@ There are three independent Terraform stacks, split by lifecycle, each with its 
 
 | Stack | Contents | Lifecycle |
 |---|---|---|
-| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM, SNS topic for alarms (the email address comes from a git-ignored `terraform.tfvars`) | Created once, never destroyed |
+| [`infra/bootstrap`](infra/bootstrap) | State bucket (versioned, encrypted, public access blocked, `prevent_destroy`), ECR repository (immutable tags, scan on push, keeps the last 5 images), GitHub OIDC provider and deploy role, origin secret in SSM, SNS topic for alarms (the email address comes from a git-ignored `terraform.tfvars`), CloudTrail trail and its log bucket | Created once, never destroyed |
 | [`infra/edge`](infra/edge) | CloudFront distribution (HTTPS, caching disabled, secret origin header) pointing at the current ALB | Permanent, free while idle; re-applied after `app` to follow the new ALB |
 | [`infra/app`](infra/app) | VPC, subnets, DynamoDB gateway endpoint, security groups, ALB with origin check, IAM roles for the task, log group, sessions table, ECS cluster, task definition, service, autoscaling and alarms (34 resources) | Created for a demo (`apply`, ~5 min) and destroyed afterwards |
 
@@ -130,7 +130,7 @@ This runs on a personal budget, so cost shaped the design.
 | CloudFront | $0 (free tier: 1 TB and 10 M requests a month) |
 | **Total** | **≈ $0.07 / h** (a 2-hour demo costs about $0.14) |
 
-When the app stack is destroyed, only the bootstrap and the edge remain: S3 state, a few images in ECR, free-tier SSM parameters and an idle CloudFront distribution, for a few cents a month. A NAT Gateway (~$35/month) was deliberately left out, and an AWS Budget alerts at 50 % and 100 % of $10/month.
+When the app stack is destroyed, only the bootstrap and the edge remain: S3 state, a few images in ECR, free-tier SSM parameters, the CloudTrail logs and an idle CloudFront distribution, for a few cents a month. A NAT Gateway (~$35/month) was deliberately left out, and an AWS Budget alerts at 50 % and 100 % of $10/month.
 
 ## Security
 
@@ -142,6 +142,7 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 - **Container** runs as a non-root user. Trivy scans the image on every pull request, ECR scans it again on push, and builds always pull the latest base image.
 - **Scanned on every pull request.** checkov blocks the merge on any finding that is not fixed or accepted with a written reason. The first scan found 35: 4 were fixed and 31 accepted, each with its reason in the code and in [`docs/security-scanning.md`](docs/security-scanning.md).
 - **Pipeline supply chain.** Every GitHub Action is pinned to a commit SHA and kept up to date by Dependabot, and the scanners run in a job with no credentials ([why](docs/security-scanning.md#the-pipeline-is-part-of-the-attack-surface)).
+- **Audit trail.** A multi-region CloudTrail trail records every API call in the account for one year, plus every read and write of the Terraform state, in a bucket that only the trail can write to. Log file validation proves the logs have not been altered.
 
 These controls are mapped to IT general controls (access, change management, operations), with evidence and known gaps, in [`docs/controls.md`](docs/controls.md).
 
@@ -198,14 +199,15 @@ These are known limitations of this version, and most of them are planned next:
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
-- **Pipeline security.** `terraform plan` posted on pull requests, and CloudTrail.
+- **Pipeline security.** `terraform plan` posted on pull requests.
+- **Alarms on the audit trail.** Send CloudTrail to CloudWatch Logs and alarm on sensitive events (root login, IAM policy changes, the trail being stopped), or enable GuardDuty.
 - **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 
 ## Repository layout
 
 ```
 app/                    FastAPI bot: Dockerfile, tests, lint config
-infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role, origin secret
+infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role, origin secret, SNS, CloudTrail
 infra/edge/             Terraform: CloudFront (HTTPS, stable URL)
 infra/app/              Terraform: network, ALB, IAM, ECS, DynamoDB, autoscaling
 .github/workflows/      ci.yml (pull requests) and deploy.yml (main)

@@ -45,7 +45,7 @@ Each accepted finding has an inline `# checkov:skip=<check>:<reason>` comment on
 - *NAT Gateway* (about $35 a month): tasks have a public IP for outbound calls, and their security group only accepts the ALB ([ADR-0001](adr/0001-public-subnets-without-nat.md)).
   `CKV_AWS_333`
 
-**3. Extra logs (5).** ALB access logs, CloudFront logs, S3 access logs, VPC flow logs and Container Insights. The app already logs every request it receives to CloudWatch, and the alarms use the ALB metrics. In production these logs would go to a central log archive account.
+**3. Extra logs (5).** ALB access logs, CloudFront logs, S3 access logs, VPC flow logs and Container Insights. The app already logs every request it receives to CloudWatch, and the alarms use the ALB metrics. For the state bucket, every object read and write is recorded by CloudTrail as a data event instead of S3 access logs. In production these logs would go to a central log archive account.
 `CKV_AWS_91`, `CKV_AWS_86`, `CKV_AWS_18`, `CKV2_AWS_11`, `CKV_AWS_65`
 
 **4. Design decisions (3).**
@@ -59,6 +59,12 @@ Each accepted finding has an inline `# checkov:skip=<check>:<reason>` comment on
 - No geo restriction: the callers are Meta's and VAPI's servers, often outside Spain, so blocking countries would break the webhooks. `CKV_AWS_374`
 - No event notifications on the state bucket: nothing needs to react when the state changes. `CKV2_AWS_62`
 - No `HEALTHCHECK` in the Dockerfile: ECS ignores it, and the ALB checks `GET /health` every 30 seconds. `CKV_DOCKER_2`
+
+### Findings on code added later
+
+| Date | Code | Accepted findings |
+|---|---|---|
+| 2026-11-11 | CloudTrail trail and its log bucket ([`cloudtrail.tf`](../infra/bootstrap/cloudtrail.tf)) | 7, in the same groups as above. *Fixed monthly cost:* customer managed KMS keys for the trail and the bucket (`CKV_AWS_35`, `CKV_AWS_145`), a replica in another region (`CKV_AWS_144`), and sending the trail to CloudWatch Logs (`CKV2_AWS_10`). *Extra logs:* access logs for the log bucket itself (`CKV_AWS_18`). *Does not apply:* notifications for every log file (`CKV_AWS_252`, `CKV2_AWS_62`). |
 
 ## First Trivy scan: 5 vulnerabilities
 
@@ -88,4 +94,4 @@ In March 2026, attackers took over Trivy's own GitHub Action and moved almost al
 
 ## In production
 
-The first accepted findings I would turn into fixes are: a domain with ACM certificates and HTTPS end to end (group 1), WAF with AWS managed rules (group 2), one customer managed key per data classification, not one per resource (group 2), and the extra logs shipped to a log archive account (group 3).
+The first accepted findings I would turn into fixes are: a domain with ACM certificates and HTTPS end to end (group 1), WAF with AWS managed rules (group 2), one customer managed key per data classification, not one per resource (group 2), the extra logs shipped to a log archive account (group 3), and CloudTrail in CloudWatch Logs with alarms on sensitive events such as a root login or an IAM policy change.
