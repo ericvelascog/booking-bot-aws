@@ -73,7 +73,7 @@ feature branch → pull request → CI ✅ → merge to main → Deploy workflow
 ```
 
 1. **CI on every pull request** ([`ci.yml`](.github/workflows/ci.yml)). Three parallel jobs:
-   - the app: `ruff`, `pytest` and `docker build` on Python 3.12;
+   - the app: `ruff`, `pytest`, `docker build` on Python 3.12, and a **Trivy** scan of the image for known vulnerabilities;
    - the infrastructure: `terraform fmt -check` and `validate`;
    - security: **checkov** scans the Terraform, the Dockerfile and the workflows for misconfigurations, and the repository for committed secrets ([`docs/security-scanning.md`](docs/security-scanning.md)).
 
@@ -139,8 +139,9 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 - **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443. Their traffic to DynamoDB goes through a gateway endpoint and never leaves the AWS network.
 - **Personal data** (phone numbers and conversations) is encrypted at rest and deleted automatically after six hours of inactivity.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
-- **Container** runs as a non-root user. ECR scans every image on push, and CI builds always pull the latest base image.
+- **Container** runs as a non-root user. Trivy scans the image on every pull request, ECR scans it again on push, and builds always pull the latest base image.
 - **Scanned on every pull request.** checkov blocks the merge on any finding that is not fixed or accepted with a written reason. The first scan found 35: 4 were fixed and 31 accepted, each with its reason in the code and in [`docs/security-scanning.md`](docs/security-scanning.md).
+- **Pipeline supply chain.** Every GitHub Action is pinned to a commit SHA and kept up to date by Dependabot, and the scanners run in a job with no credentials ([why](docs/security-scanning.md#the-pipeline-is-part-of-the-attack-surface)).
 
 These controls are mapped to IT general controls (access, change management, operations), with evidence and known gaps, in [`docs/controls.md`](docs/controls.md).
 
@@ -197,7 +198,7 @@ These are known limitations of this version, and most of them are planned next:
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
-- **Pipeline security.** `terraform plan` posted on pull requests, image scanning with Trivy, and CloudTrail.
+- **Pipeline security.** `terraform plan` posted on pull requests, and CloudTrail.
 - **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 
 ## Repository layout

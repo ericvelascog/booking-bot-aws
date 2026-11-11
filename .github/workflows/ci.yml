@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Las acciones van fijadas por commit (@<sha> # vX.Y.Z) y no por etiqueta (@v7):
+# una etiqueta se puede mover a otro código, un commit no. Dependabot las
+# mantiene al día (.github/dependabot.yml). Por qué: docs/security-scanning.md
+
 # El robot solo necesita leer el código
 permissions:
   contents: read
@@ -19,10 +23,10 @@ jobs:
         working-directory: app
     steps:
       - name: Download the code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Python 3.12 (same version as the image)
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
           cache: pip
@@ -42,15 +46,30 @@ jobs:
       - name: Build the Docker image
         run: docker build -t booking-bot:ci .
 
+      # Trivy busca vulnerabilidades conocidas (CVE) dentro de la imagen: en los
+      # paquetes del sistema (Debian) y en las librerías de Python. Falla si hay
+      # alguna HIGH o CRITICAL que ya tenga arreglo; las que no tienen arreglo
+      # todavía no se pueden corregir, y bloquearían todos los PR sin remedio.
+      # Este job no tiene credenciales de AWS ni secretos: si el propio escáner
+      # estuviera comprometido (pasó en marzo de 2026), no podría robar nada importante
+      - name: Scan the image for known vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: booking-bot:ci
+          version: v0.76.2
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
   terraform:
     name: Terraform (format, validate)
     runs-on: ubuntu-latest
     steps:
       - name: Download the code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Terraform
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.16.2
 
@@ -79,10 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download the code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Python 3.12
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 

@@ -1,0 +1,13 @@
+# Dependabot abre un PR cuando sale una versión nueva de alguna acción de GitHub.
+# Hace falta porque las acciones están fijadas por commit: sin esto no se
+# actualizarían nunca, ni siquiera con parches de seguridad. Un solo PR al mes
+# con todas juntas, y pasa la CI como cualquier otro cambio.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
