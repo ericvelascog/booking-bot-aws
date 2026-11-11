@@ -60,6 +60,17 @@ Each accepted finding has an inline `# checkov:skip=<check>:<reason>` comment on
 - No event notifications on the state bucket: nothing needs to react when the state changes. `CKV2_AWS_62`
 - No `HEALTHCHECK` in the Dockerfile: ECS ignores it, and the ALB checks `GET /health` every 30 seconds. `CKV_DOCKER_2`
 
+## First Trivy scan: 5 vulnerabilities
+
+Trivy's first run (2026-11-11, Trivy 0.76.2) failed the pull request that added it. It found 5 `HIGH` vulnerabilities, all with a fix available, and all 5 were fixed:
+
+| Package | Vulnerabilities | Cause | Fix |
+|---|---|---|---|
+| `zlib1g` (Debian) | 2 × `HIGH` | Debian had already published the fix, but the official `python:3.12-slim` image had not been rebuilt with it yet. | The Dockerfile now runs `apt-get upgrade` on top of the base image, so Debian security fixes are in every build without waiting for the official image. |
+| `starlette` 0.38.6 (Python) | 3 × `HIGH` (CVE-2024-47874, CVE-2026-48818, CVE-2026-54283) | FastAPI 0.115.0 required an old Starlette. | FastAPI upgraded to 0.162.4, which brings Starlette 1.10.0. The 25 tests pass. |
+
+None of the Starlette issues could be exploited in this app as it is: they affect form parsing and `StaticFiles`, and the bot only receives JSON. But upgrading took less time than proving that, and the next change to the app could have made one of them reachable.
+
 ## The pipeline is part of the attack surface
 
 In March 2026, attackers took over Trivy's own GitHub Action and moved almost all of its version tags to malicious code that stole the secrets of the pipelines running it ([CVE-2026-33634](https://github.com/advisories/GHSA-69fq-xp46-6x23)). Every workflow that referenced a tag ran the attacker's code. So:

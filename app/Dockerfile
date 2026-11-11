@@ -3,6 +3,13 @@ FROM python:3.12-slim
 
 # checkov:skip=CKV_DOCKER_2:ECS does not use the Docker HEALTHCHECK; the ALB checks GET /health every 30 s
 
+# Debian security fixes that are not in the official Python image yet. The image
+# is rebuilt every few weeks, but Debian publishes fixes before that: this is how
+# Trivy found two zlib vulnerabilities that already had a fix (docs/security-scanning.md)
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # No .pyc files on disk; logs go straight to stdout (and from there to CloudWatch)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
