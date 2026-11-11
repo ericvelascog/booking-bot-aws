@@ -70,3 +70,27 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** a GitHub Actions outage. The run could not start any job. Nothing was wrong in the workflow, the code or AWS.
 - **Fix:** once GitHub was recovering, I started the Deploy manually with `gh workflow run deploy.yml --ref main` (the workflow has a `workflow_dispatch` trigger for this). `/health` then reported the new commit, and the next message created an item in the table.
 - **Lesson:** check what is actually deployed before testing a change. That is exactly why `/health` reports the commit. When a workflow fails with no jobs and no logs, check the provider's status page before debugging the YAML.
+
+## 008 — `terraform destroy` left the ALB, the VPC and the table running (2026-11-10)
+- **Symptom:** after a `terraform destroy` at the end of a session, the ALB (with its two public IPs), the VPC, the sessions table and an empty ECS cluster were still running. The Deploy run of the last merge had also failed, at *Deploy to ECS and wait until it is stable*.
+- **Diagnosis:**
+  - The alarms and the ECS service were already gone, but the rest was not, so the destroy had started and stopped halfway.
+  - The state lock file (`app/terraform.tfstate.tflock`) was still in S3. It had been created 23 seconds after the merge to `main`, while the Deploy run was still in progress.
+  - The state file had not been written since before the destroy, and no Terraform process was running on the PC.
+- **Root cause:** two things together.
+  - The destroy was started while the Deploy run was updating the same ECS service, so the Deploy failed when the service was deleted under it.
+  - The Terraform process then stopped before finishing (the window was closed), so it could neither save the state nor release the lock.
+- **Fix:**
+  - Checked that no other Terraform run was in progress, then released the lock with `terraform force-unlock <lock-id>`.
+  - Ran `terraform destroy` again. Terraform refreshes the state against AWS first, so the resources that were already deleted were dropped and only the rest was destroyed.
+  - The second run seemed stuck for two minutes at `aws_ecs_service.app: Refreshing state...`. That is expected: the AWS provider keeps polling an `INACTIVE` service for up to two minutes before treating it as deleted.
+- **Lesson:** wait for the deployment to finish before destroying. Never close a Terraform window in the middle of a run. A silent Terraform is usually waiting for AWS, and interrupting it leaves the lock in place and the state out of date.
+
+## 009 — Terraform fails to refresh the `aws login` session, while the AWS CLI succeeds (2026-11-11)
+- **Symptom:** about 40 minutes after `aws login`, `terraform plan` failed in the S3 backend with `failed to refresh cached credentials, create oauth2 token ... ValidationException: The provided authorization grant is invalid, expired, revoked, or malformed`.
+- **Diagnosis:**
+  - The cached session's access credentials last 15 minutes and are then renewed with a refresh token. After 40 minutes without any AWS call, they had expired, so Terraform had to renew them and that call failed.
+  - A minute later, `aws sts get-caller-identity` renewed them **with the same cached refresh token** without any error, and `terraform plan` then worked.
+- **Root cause:** not confirmed. The login session was valid, because the CLI could renew it. The failure is in how Terraform renews it. On the previous days it had probably never needed to, because AWS CLI commands run in between kept the credentials fresh.
+- **Fix (workaround):** run any AWS CLI command, such as `aws sts get-caller-identity`, before Terraform when the session has been idle for more than 15 minutes.
+- **Lesson:** two tools reading the same credential cache can behave differently. Testing the same credential with a second client tells you whether the problem is the credential or the client.

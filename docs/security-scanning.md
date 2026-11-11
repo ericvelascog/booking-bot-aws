@@ -7,9 +7,13 @@ Every pull request is scanned for security misconfigurations, and the merge is b
 | Scanner | What it checks | When |
 |---|---|---|
 | [checkov](https://www.checkov.io/) | Terraform (`infra/`), the Dockerfile, the GitHub Actions workflows, and secrets committed by mistake | Every pull request, CI job `Security scan (checkov)` ([`ci.yml`](../.github/workflows/ci.yml)) |
+| [Trivy](https://trivy.dev/) | Known vulnerabilities (CVEs) in the image: the Debian packages and the Python libraries. Fails on any `HIGH` or `CRITICAL` that already has a fix | Every pull request, in the `App` job, right after `docker build` |
 | ECR image scanning | Known vulnerabilities in the image's OS packages | Every image push |
+| Dependabot | New versions of the GitHub Actions used by the workflows | Monthly, as one pull request |
 
-checkov's version is pinned in the workflow. A new version brings new rules, so upgrading it is a pull request of its own, not a surprise failure on an unrelated change.
+The versions of checkov and Trivy are pinned in the workflow. A new version brings new rules, so upgrading is a pull request of its own, not a surprise failure on an unrelated change.
+
+Trivy ignores vulnerabilities that have no fix yet (`ignore-unfixed`). Nothing can be done about them in this repository, and they would block every pull request. ECR's scan still reports them.
 
 ## First scan: 35 findings
 
@@ -55,6 +59,15 @@ Each accepted finding has an inline `# checkov:skip=<check>:<reason>` comment on
 - No geo restriction: the callers are Meta's and VAPI's servers, often outside Spain, so blocking countries would break the webhooks. `CKV_AWS_374`
 - No event notifications on the state bucket: nothing needs to react when the state changes. `CKV2_AWS_62`
 - No `HEALTHCHECK` in the Dockerfile: ECS ignores it, and the ALB checks `GET /health` every 30 seconds. `CKV_DOCKER_2`
+
+## The pipeline is part of the attack surface
+
+In March 2026, attackers took over Trivy's own GitHub Action and moved almost all of its version tags to malicious code that stole the secrets of the pipelines running it ([CVE-2026-33634](https://github.com/advisories/GHSA-69fq-xp46-6x23)). Every workflow that referenced a tag ran the attacker's code. So:
+
+- **Every action is pinned to a full commit SHA**, with the version as a comment: `actions/checkout@3d3c42e… # v7.0.1`. A tag can be moved to other code; a commit cannot. When they were pinned, each major tag pointed to the same commit as its latest release, so the pinning changed nothing that runs.
+- **Dependabot keeps the pins up to date.** Without it, pinned actions would never get security fixes. Its pull requests go through CI like any other change.
+- **Scanners run where there is nothing to steal.** checkov and Trivy run in the CI workflow, on pull requests, with a read-only token and no AWS credentials or secrets. Only the Deploy workflow, on `main`, can get AWS credentials, and it runs no third-party scanners.
+- Trivy is pinned to `trivy-action` v0.36.0 (April 2026, after the incident), which pins its own dependencies by commit, and to Trivy v0.76.2.
 
 ## Rules for skipping a check
 

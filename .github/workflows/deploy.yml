@@ -13,6 +13,10 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# Las acciones van fijadas por commit (@<sha> # vX.Y.Z) y no por etiqueta (@v7):
+# una etiqueta se puede mover a otro código, un commit no. Dependabot las
+# mantiene al día (.github/dependabot.yml). Por qué: docs/security-scanning.md
+
 permissions:
   id-token: write # para pedir la "tarjeta" OIDC firmada por GitHub
   contents: read
@@ -31,17 +35,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download the code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Log in to AWS with OIDC (no stored keys)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
       # --pull: siempre parte de la base de Python más reciente (parches de seguridad)
       # --provenance=false: una sola entrada por versión en ECR
@@ -78,7 +82,7 @@ jobs:
       - name: Put the new image in the task definition
         if: steps.infra.outputs.running == 'true'
         id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
@@ -88,7 +92,7 @@ jobs:
       # la nueva está sana. Si no arranca, el circuit breaker vuelve atrás solo.
       - name: Deploy to ECS and wait until it is stable
         if: steps.infra.outputs.running == 'true'
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2.6.4
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
           cluster: ${{ env.ECS_CLUSTER }}
