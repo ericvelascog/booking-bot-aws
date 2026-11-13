@@ -94,3 +94,13 @@ Real problems found while building this project, written down right after fixing
 - **Root cause:** not confirmed. The login session was valid, because the CLI could renew it. The failure is in how Terraform renews it. On the previous days it had probably never needed to, because AWS CLI commands run in between kept the credentials fresh.
 - **Fix (workaround):** run any AWS CLI command, such as `aws sts get-caller-identity`, before Terraform when the session has been idle for more than 15 minutes.
 - **Lesson:** two tools reading the same credential cache can behave differently. Testing the same credential with a second client tells you whether the problem is the credential or the client.
+
+## 010 — The public workflow log showed the AWS account ID, although the plan comment hid it (2026-11-13)
+- **Symptom:** the first plan comment on a pull request showed `***` instead of the account ID, as designed. But a search of the run's public log found the account ID once.
+- **Diagnosis:** the only occurrence was in the header of the *Log in to AWS* step: `role-to-assume: arn:aws:iam::<account>:role/booking-bot-github-plan`. The step had `mask-aws-account-id: true`, which masks the ID in everything logged after the step starts.
+- **Root cause:** before running a step, GitHub prints its inputs in the log, and it masks only values that come from secrets. The role ARN was a repository variable, so it was printed in clear before the action could mask anything. The Deploy workflow had done the same with its role since October.
+- **Fix:**
+  - Moved both role ARNs from repository variables to repository secrets (`AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`), so GitHub masks them in the inputs too.
+  - Added `mask-aws-account-id: true` to the Deploy workflow as well, which also hides the ID in the ECR image address during `docker push`.
+  - AWS does not consider account IDs secret. The point is not to publish more than needed in a public repository, and to make sure the docs describe what really happens.
+- **Lesson:** after adding masking, search the real output for the value instead of assuming the masking works. A public log includes the step inputs, not only what the commands print.
