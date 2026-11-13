@@ -8,6 +8,11 @@ output "state_bucket" {
   value       = aws_s3_bucket.tfstate.bucket
 }
 
+output "github_plan_role_arn" {
+  description = "Rol de solo lectura del workflow de plan en los PR (va en plan.yml)"
+  value       = aws_iam_role.github_plan.arn
+}
+
 output "github_deploy_role_arn" {
   description = "Rol que asume el pipeline de despliegue (va en deploy.yml)"
   value       = aws_iam_role.github_deploy.arn
