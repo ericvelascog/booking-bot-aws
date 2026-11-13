@@ -104,3 +104,121 @@ resource "aws_iam_role_policy" "github_deploy" {
   role   = aws_iam_role.github_deploy.id
   policy = data.aws_iam_policy_document.github_deploy.json
 }
+
+# ---------- Rol de SOLO LECTURA para `terraform plan` en los pull requests ----------
+# El workflow de los PR (.github/workflows/plan.yml) lo usa para calcular qué
+# cambiaría en AWS y publicarlo en el PR.
+#
+# Ojo: ese workflow se ejecuta en la versión de la RAMA del PR, así que quien
+# pueda abrir un PR en este repo decide qué código usa este rol. Por eso el rol
+# no puede cambiar nada, y tampoco puede leer secretos ni datos personales.
+# (Los PR que vienen de forks no reciben tarjeta OIDC: GitHub no se la da.)
+
+# 1. Quién puede ponerse el rol: SOLO los workflows de pull requests de nuestro repo
+data "aws_iam_policy_document" "github_plan_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["${local.github_subject_prefix}:pull_request"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_plan" {
+  name                 = "booking-bot-github-plan"
+  assume_role_policy   = data.aws_iam_policy_document.github_plan_assume.json
+  max_session_duration = 3600 # las credenciales caducan en 1 hora
+}
+
+# 2. Qué puede hacer: LEER la configuración de todo (la política de AWS ReadOnlyAccess)...
+resource "aws_iam_role_policy_attachment" "github_plan_read_only" {
+  role       = aws_iam_role.github_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+# 3. ...MENOS los datos. ReadOnlyAccess también deja leer CONTENIDO: los secretos
+#    del bot en SSM, los logs (con números de teléfono), las conversaciones de la
+#    tabla y las grabaciones de CloudTrail. Un Deny explícito gana siempre a
+#    cualquier Allow. Nada de esto le hace falta a `terraform plan`.
+#    Sí puede leer el secreto del origen (/booking-bot-infra/...) y el estado de
+#    Terraform: el plan los necesita.
+data "aws_iam_policy_document" "github_plan_deny_data" {
+  statement {
+    sid    = "NeverReadTheAppSecrets"
+    effect = "Deny"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+      "ssm:GetParameterHistory",
+    ]
+    resources = [
+      "arn:aws:ssm:eu-west-1:${local.account_id}:parameter/booking-bot",
+      "arn:aws:ssm:eu-west-1:${local.account_id}:parameter/booking-bot/*",
+    ]
+  }
+
+  statement {
+    sid    = "NeverReadLogs"
+    effect = "Deny"
+    actions = [
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:StartQuery",
+      "logs:GetQueryResults",
+      "logs:StartLiveTail",
+      "logs:GetLogRecord",
+      "logs:Unmask",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "NeverReadConversations"
+    effect = "Deny"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:PartiQLSelect",
+    ]
+    resources = ["*"]
+  }
+
+  # Solo los objetos del bucket de CloudTrail: el estado de Terraform, en el
+  # otro bucket, sí tiene que poder leerlo
+  statement {
+    sid       = "NeverReadTheAuditLogFiles"
+    effect    = "Deny"
+    actions   = ["s3:GetObject", "s3:GetObjectVersion"]
+    resources = ["${aws_s3_bucket.cloudtrail.arn}/*"]
+  }
+
+  statement {
+    sid       = "NeverReadTheEventHistory"
+    effect    = "Deny"
+    actions   = ["cloudtrail:LookupEvents"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_plan_deny_data" {
+  name   = "deny-reading-secrets-and-personal-data"
+  role   = aws_iam_role.github_plan.id
+  policy = data.aws_iam_policy_document.github_plan_deny_data.json
+}

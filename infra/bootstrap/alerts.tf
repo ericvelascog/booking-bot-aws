@@ -7,6 +7,10 @@
 variable "alert_email" {
   description = "Email que recibe las alarmas. Va en terraform.tfvars, que git ignora: el repo es público"
   type        = string
+
+  # Terraform no lo enseña en el plan: el plan de los PR se publica en GitHub,
+  # y el repo es público. En el CI llega desde el secreto ALERT_EMAIL
+  sensitive = true
 }
 
 resource "aws_sns_topic" "alerts" {
