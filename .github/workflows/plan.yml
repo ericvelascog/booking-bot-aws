@@ -1,0 +1,71 @@
+# Plan: en cada pull request que toca la infraestructura, Terraform calcula qué
+# cambiaría en AWS en los tres stacks y lo publica como comentario en el PR.
+# Así se revisa el cambio real (qué se crea, se cambia o se BORRA) antes del merge.
+#
+# Usa un rol de SOLO LECTURA (infra/bootstrap/github-oidc.tf). Este workflow se
+# ejecuta en la versión de la rama del PR, así que el rol no puede cambiar nada
+# ni leer secretos ni datos personales. Por qué así: docs/adr/0005-terraform-plan-on-pull-requests.md
+name: Plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/plan.yml"
+      - "scripts/terraform-plan.sh"
+
+# Un plan por PR: si llega un push nuevo, se cancela el plan anterior
+concurrency:
+  group: plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Las acciones van fijadas por commit (@<sha> # vX.Y.Z) y no por etiqueta (@v7):
+# una etiqueta se puede mover a otro código, un commit no. Dependabot las
+# mantiene al día (.github/dependabot.yml). Por qué: docs/security-scanning.md
+
+permissions:
+  id-token: write # para pedir la "tarjeta" OIDC firmada por GitHub
+  contents: read
+  pull-requests: write # para escribir el comentario con el plan
+
+jobs:
+  plan:
+    name: Terraform plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # terraform_wrapper: false para que la salida de terraform llegue tal cual al script
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      # mask-aws-account-id: el número de la cuenta sale como *** en los logs (el repo es público)
+      - name: Log in to AWS with the read-only role (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: eu-west-1
+          mask-aws-account-id: true
+
+      - name: Plan the three stacks
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash scripts/terraform-plan.sh
+
+      # Se publica también si algún plan falla. Edita el comentario anterior del
+      # robot en vez de añadir uno nuevo en cada push
+      - name: Post the plan on the pull request
+        if: always() && hashFiles('plan-comment.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body-file plan-comment.md --edit-last \
+            || gh pr comment "$PR_NUMBER" --body-file plan-comment.md

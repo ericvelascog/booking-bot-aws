@@ -69,7 +69,7 @@ flowchart LR
 ## How a change reaches production
 
 ```
-feature branch → pull request → CI ✅ → merge to main → Deploy workflow → new version live (~5 min)
+feature branch → pull request → CI ✅ + plan 💬 → merge to main → Deploy workflow → new version live (~5 min)
 ```
 
 1. **CI on every pull request** ([`ci.yml`](.github/workflows/ci.yml)). Three parallel jobs:
@@ -78,7 +78,8 @@ feature branch → pull request → CI ✅ → merge to main → Deploy workflow
    - security: **checkov** scans the Terraform, the Dockerfile and the workflows for misconfigurations, and the repository for committed secrets ([`docs/security-scanning.md`](docs/security-scanning.md)).
 
    `main` is protected: pull requests only, all three checks required, no exceptions for admins.
-2. **CD on every merge to `main`** ([`deploy.yml`](.github/workflows/deploy.yml)):
+2. **`terraform plan` on pull requests that change `infra/`** ([`plan.yml`](.github/workflows/plan.yml)). Each stack is planned with a read-only role, and the result is posted as a comment, so the reviewer sees what would be created, changed or destroyed before merging. The role can read the configuration but not the app's secrets, logs or data ([ADR-0005](docs/adr/0005-terraform-plan-on-pull-requests.md)).
+3. **CD on every merge to `main`** ([`deploy.yml`](.github/workflows/deploy.yml)):
    1. GitHub authenticates to AWS with **OIDC**. No AWS keys are stored anywhere: AWS only trusts tokens from this repository's `main` branch and returns credentials for a least-privilege role that expire after one hour.
    2. Build the image tagged with the commit and push it to ECR.
    3. If the infrastructure is up, register a new task definition revision and let ECS roll it out.
@@ -199,7 +200,6 @@ These are known limitations of this version, and most of them are planned next:
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
 - **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
-- **Pipeline security.** `terraform plan` posted on pull requests.
 - **Alarms on the audit trail.** Send CloudTrail to CloudWatch Logs and alarm on sensitive events (root login, IAM policy changes, the trail being stopped), or enable GuardDuty.
 - **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 
@@ -210,8 +210,8 @@ app/                    FastAPI bot: Dockerfile, tests, lint config
 infra/bootstrap/        Terraform: state bucket, ECR, GitHub OIDC + deploy role, origin secret, SNS, CloudTrail
 infra/edge/             Terraform: CloudFront (HTTPS, stable URL)
 infra/app/              Terraform: network, ALB, IAM, ECS, DynamoDB, autoscaling
-.github/workflows/      ci.yml (pull requests) and deploy.yml (main)
-scripts/                put-secrets.ps1: upload app secrets to SSM
+.github/workflows/      ci.yml and plan.yml (pull requests), deploy.yml (main)
+scripts/                put-secrets.ps1 (upload app secrets to SSM), terraform-plan.sh (plan comment)
 docs/adr/               Architecture decision records
 docs/controls.md        IT general controls mapping (evidence and gaps)
 docs/runbook.md         What to do when each alarm fires
