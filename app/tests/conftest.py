@@ -15,6 +15,7 @@ os.environ.setdefault("WHATSAPP_TOKEN", "test-token")
 os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "000000")
 os.environ.setdefault("WEBHOOK_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+os.environ.setdefault("VOICE_API_KEY", "test-voice-key-" + "x" * 32)  # mínimo 32 caracteres
 
 # Las conversaciones se guardan en memoria salvo en los tests que piden
 # DynamoDB (y esos usan moto, una DynamoDB de mentira)

@@ -31,7 +31,7 @@ Commands assume the AWS CLI is logged in (`aws login`) and the region is `eu-wes
 **Impact:** clients get errors. For WhatsApp, Meta retries failed webhook deliveries for a while, so short spikes are usually recovered.
 
 **Diagnose:**
-- **`500` from the app:** look for a Python traceback in the logs (step 3). Malformed requests to `/llm/chat/completions` also return `500`. This is a known gap until the voice endpoints require a key.
+- **`500` from the app:** look for a Python traceback in the logs (step 3). Requests without the voice API key get `401` and never reach the code, but a malformed request that carries the key still returns `500`.
 - **`503` from the ALB:** no healthy task. Check the ECS events (step 2). Tasks failing to start usually mean a bad image, missing secrets in SSM or a missing IAM permission, and the stopped task's reason says which.
 - **`504` from the ALB:** a request took longer than the timeout, usually a slow external API (Anthropic, Google Calendar).
 
