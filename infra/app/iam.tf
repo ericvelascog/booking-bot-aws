@@ -1,7 +1,7 @@
 # Los dos roles del contenedor del bot
 
 locals {
-  # Las 6 llaves que subió scripts/put-secrets.ps1 a SSM (/booking-bot/<NOMBRE>)
+  # Las 7 llaves que subió scripts/put-secrets.ps1 a SSM (/booking-bot/<NOMBRE>)
   secret_names = [
     "WHATSAPP_TOKEN",
     "WHATSAPP_PHONE_NUMBER_ID",
@@ -9,6 +9,9 @@ locals {
     "ANTHROPIC_API_KEY",
     "GOOGLE_CALENDAR_ID",
     "GOOGLE_CREDENTIALS_CONTENT",
+    # La clave que tiene que enviar quien llame a /llm y /vapi (el canal de voz).
+    # Tiene que estar en SSM ANTES del apply: si falta, las tareas no arrancan
+    "VOICE_API_KEY",
   ]
   ssm_prefix_arn = "arn:aws:ssm:${local.region}:${data.aws_caller_identity.current.account_id}:parameter/booking-bot"
 }
