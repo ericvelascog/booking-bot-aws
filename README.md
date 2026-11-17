@@ -138,6 +138,7 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 - **No long-lived credentials.** CI/CD uses OIDC, the console and CLI use MFA with temporary credentials, and no IAM user has access keys.
 - **Least privilege everywhere.** Every IAM statement is scoped to this project's resources. The few `"*"` resources are actions that AWS cannot scope, and each one is commented in the code.
 - **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443. Their traffic to DynamoDB goes through a gateway endpoint and never leaves the AWS network.
+- **Voice endpoints require an API key.** `/llm` and `/vapi` call the paid Claude API, so they reject any request without the key before reading its body. The key is checked in constant time, and the bot refuses to start if it is missing or shorter than 32 characters.
 - **Personal data** (phone numbers and conversations) is encrypted at rest and deleted automatically after six hours of inactivity.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. Trivy scans the image on every pull request, ECR scans it again on push, and builds always pull the latest base image.
@@ -183,10 +184,11 @@ docker run --rm -v "$PWD/app:/app" -w /app python:3.12-slim \
   sh -c "pip install -q -r requirements-dev.txt && ruff check . && pytest -v"
 ```
 
-[`examples/ask-availability.json`](examples/ask-availability.json) is a sample request for the OpenAI-compatible endpoint used by the voice channel:
+[`examples/ask-availability.json`](examples/ask-availability.json) is a sample request for the OpenAI-compatible endpoint used by the voice channel. It needs the `VOICE_API_KEY` from `app/.env`:
 
 ```bash
 curl -X POST http://localhost:8000/llm/chat/completions \
+  -H "Authorization: Bearer $VOICE_API_KEY" \
   -H "Content-Type: application/json" --data-binary @examples/ask-availability.json
 ```
 
@@ -199,7 +201,7 @@ These are known limitations of this version, and most of them are planned next:
 - **Scaling target from a load test.** The 120 requests per task per minute is an estimate. Measure where latency degrades and set the target below it ([ADR-0004](docs/adr/0004-autoscale-on-requests-per-task.md)).
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
-- **Application security.** An API key on the voice endpoints and verification of WhatsApp's `X-Hub-Signature-256`.
+- **Application security.** Verification of WhatsApp's `X-Hub-Signature-256`.
 - **Alarms on the audit trail.** Send CloudTrail to CloudWatch Logs and alarm on sensitive events (root login, IAM policy changes, the trail being stopped), or enable GuardDuty.
 - **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 

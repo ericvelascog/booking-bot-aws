@@ -1,9 +1,10 @@
 import asyncio
 import os
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import Depends, FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from config import settings
 from claude_agent import process_message
+from security import require_voice_api_key
 from whatsapp_service import send_message
 from vapi_service import process_vapi_request
 from llm_service import (
@@ -74,8 +75,13 @@ async def _handle_message(phone: str, user_text: str) -> None:
         print(f"Error procesando mensaje de {phone}: {e}")
 
 
-@app.post("/llm/v1/chat/completions")
-@app.post("/llm/chat/completions")
+# Las rutas de voz exigen la clave (security.py). Cada llamada gasta saldo de
+# la API de Claude, así que no pueden quedar abiertas a cualquiera
+voice_auth = [Depends(require_voice_api_key)]
+
+
+@app.post("/llm/v1/chat/completions", dependencies=voice_auth)
+@app.post("/llm/chat/completions", dependencies=voice_auth)
 async def llm_chat_completions(request: Request):
     """Endpoint Custom LLM compatible con OpenAI para VAPI."""
     print(">>> VAPI LLM REQUEST RECIBIDO")
@@ -99,7 +105,7 @@ async def llm_chat_completions(request: Request):
     return build_non_streaming_response(text, model)
 
 
-@app.post("/vapi")
+@app.post("/vapi", dependencies=voice_auth)
 async def vapi_webhook(request: Request):
     """Webhook único para todas las tool calls de VAPI."""
     body = await request.json()
