@@ -1,4 +1,5 @@
 """Comprobaciones de seguridad de las peticiones que llegan al bot."""
+import hashlib
 import hmac
 
 from fastapi import HTTPException, Request
@@ -32,3 +33,30 @@ def require_voice_api_key(request: Request) -> None:
             detail="Missing or invalid API key",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def require_whatsapp_signature(request: Request) -> None:
+    """Deja pasar solo los mensajes que ha firmado Meta (cabecera X-Hub-Signature-256).
+
+    Meta calcula un HMAC-SHA256 del cuerpo de la petición con el App Secret, un
+    secreto que solo conocemos Meta y nosotros, y lo envía como
+    "sha256=<64 caracteres hexadecimales>". Aquí se repite el cálculo con nuestra
+    copia del secreto: si sale lo mismo, el mensaje viene de Meta (autenticidad)
+    y nadie lo ha cambiado por el camino (integridad).
+
+    Se firma el cuerpo EXACTO, byte a byte, tal como llegó. Si se convirtiera a
+    JSON y otra vez a texto, cambiarían los espacios o los acentos y la firma ya
+    no cuadraría. FastAPI guarda el cuerpo leído, así que la ruta puede volver
+    a leerlo después.
+    """
+    body = await request.body()
+    expected = "sha256=" + hmac.new(
+        settings.whatsapp_app_secret.encode(), body, hashlib.sha256
+    ).hexdigest()
+    received = request.headers.get("x-hub-signature-256", "")
+
+    # compare_digest, igual que con la clave de voz: tarda lo mismo acierte o falle
+    if not hmac.compare_digest(received.encode(), expected.encode()):
+        # Sin datos de la petición: solo que se ha rechazado, para poder buscarlo
+        print("Webhook rechazado: firma X-Hub-Signature-256 ausente o incorrecta")
+        raise HTTPException(status_code=403, detail="Invalid signature")

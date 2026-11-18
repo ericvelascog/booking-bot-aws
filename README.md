@@ -139,6 +139,7 @@ When the app stack is destroyed, only the bootstrap and the edge remain: S3 stat
 - **Least privilege everywhere.** Every IAM statement is scoped to this project's resources. The few `"*"` resources are actions that AWS cannot scope, and each one is commented in the code.
 - **Network.** HTTPS for viewers through CloudFront. The ALB only accepts CloudFront's IP ranges and requests that carry the secret origin header. Tasks accept traffic only from the ALB security group and can only go out on port 443. Their traffic to DynamoDB goes through a gateway endpoint and never leaves the AWS network.
 - **Voice endpoints require an API key.** `/llm` and `/vapi` call the paid Claude API, so they reject any request without the key before reading its body. The key is checked in constant time, and the bot refuses to start if it is missing or shorter than 32 characters.
+- **WhatsApp messages are verified.** `/webhook` only processes requests signed by Meta: it recomputes the `X-Hub-Signature-256` HMAC over the raw body with the app secret and rejects any mismatch with `403`, so nobody can impersonate WhatsApp to book or cancel appointments.
 - **Personal data** (phone numbers and conversations) is encrypted at rest and deleted automatically after six hours of inactivity.
 - **Secrets** stay out of the image (`.dockerignore`), out of Git (`.gitignore`) and out of the Terraform state (uploaded with `scripts/put-secrets.ps1`).
 - **Container** runs as a non-root user. Trivy scans the image on every pull request, ECR scans it again on push, and builds always pull the latest base image.
@@ -201,7 +202,6 @@ These are known limitations of this version, and most of them are planned next:
 - **Scaling target from a load test.** The 120 requests per task per minute is an estimate. Measure where latency degrades and set the target below it ([ADR-0004](docs/adr/0004-autoscale-on-requests-per-task.md)).
 - **Private subnets** with a NAT Gateway per AZ, keeping only the ALB public.
 - **Observability.** Structured JSON logs, latency alarms (p95 target response time) and a dashboard, plus an on-call channel such as Slack or PagerDuty instead of email.
-- **Application security.** Verification of WhatsApp's `X-Hub-Signature-256`.
 - **Alarms on the audit trail.** Send CloudTrail to CloudWatch Logs and alarm on sensitive events (root login, IAM policy changes, the trail being stopped), or enable GuardDuty.
 - **Accepted scan findings with a fixed cost.** WAF, customer managed KMS keys and central logs (ALB, CloudFront, VPC flow logs) ([`docs/security-scanning.md`](docs/security-scanning.md#in-production)).
 

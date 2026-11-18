@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from config import settings
 from claude_agent import process_message
-from security import require_voice_api_key
+from security import require_voice_api_key, require_whatsapp_signature
 from whatsapp_service import send_message
 from vapi_service import process_vapi_request
 from llm_service import (
@@ -29,7 +29,9 @@ async def verify_webhook(request: Request):
     raise HTTPException(status_code=403, detail="Verificación fallida")
 
 
-@app.post("/webhook")
+# Solo mensajes firmados por Meta (security.py). Sin esto, cualquiera que
+# conociera la URL podría hacerse pasar por WhatsApp y reservar o cancelar citas
+@app.post("/webhook", dependencies=[Depends(require_whatsapp_signature)])
 async def receive_message(request: Request):
     """Recibe mensajes de WhatsApp y responde usando el agente Claude."""
     body = await request.json()

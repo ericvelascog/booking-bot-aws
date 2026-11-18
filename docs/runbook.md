@@ -22,7 +22,8 @@ Commands assume the AWS CLI is logged in (`aws login`) and the region is `eu-wes
    aws logs tail /ecs/booking-bot --since 15m | grep -v "GET /health"
    ```
    Each task writes to its own log stream (`app/app/<task-id>`), so `--format detailed` shows which task logged each line.
-4. **Was there a deployment just before?** Check the Deploy workflow in GitHub Actions. A bad version is normally rolled back by the circuit breaker. If it was not, revert the commit on `main` through a pull request; the pipeline deploys the revert.
+4. **The bot does not answer WhatsApp, but no alarm fired?** Look for `Webhook rechazado` in the logs. Every message is being rejected with `403` because its signature does not match: the app secret was reset in Meta and SSM still has the old one. Upload the new one with `scripts/put-secrets.ps1` and force a new deployment (see [message-errors](#message-errors)). The `5xx` alarm does not see this, because `403` is a client error.
+5. **Was there a deployment just before?** Check the Deploy workflow in GitHub Actions. A bad version is normally rolled back by the circuit breaker. If it was not, revert the commit on `main` through a pull request; the pipeline deploys the revert.
 
 ## http-5xx
 
