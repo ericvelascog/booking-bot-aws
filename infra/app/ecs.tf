@@ -13,7 +13,7 @@ resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${local.name}"
   retention_in_days = 7
 
-  # checkov:skip=CKV_AWS_338:7 days on purpose: the logs contain phone numbers, so they are kept no longer than needed (GDPR data minimisation)
+  # checkov:skip=CKV_AWS_338:7 days on purpose: the logs can still hold personal data (masked phone numbers, error messages), so they are kept no longer than needed (GDPR data minimisation)
   # checkov:skip=CKV_AWS_158:CloudWatch encrypts logs at rest by default; a customer managed key costs 1 USD per month
 }
 

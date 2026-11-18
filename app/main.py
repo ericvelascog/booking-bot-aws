@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from config import settings
 from claude_agent import process_message
+from privacy import mask_phone, summarize_vapi_request
 from security import require_voice_api_key, require_whatsapp_signature
 from whatsapp_service import send_message
 from vapi_service import process_vapi_request
@@ -70,11 +71,19 @@ async def _handle_message(phone: str, user_text: str) -> None:
         response_text = await asyncio.to_thread(process_message, phone, user_text)
         await send_message(phone, response_text)
     except Exception as e:
-        await send_message(
-            phone,
-            "Lo siento, ha ocurrido un error. Por favor, inténtalo de nuevo en unos momentos.",
-        )
-        print(f"Error procesando mensaje de {phone}: {e}")
+        # PRIMERO el log, que es lo que cuenta la alarma message-errors: busca el
+        # texto "Error procesando mensaje" (infra/app/alarms.tf), no cambiarlo.
+        # Antes iba después de la disculpa, y si lo que fallaba era el envío por
+        # WhatsApp, la disculpa también fallaba y el error no llegaba al log.
+        # El teléfono va tapado (privacy.py)
+        print(f"Error procesando mensaje de {mask_phone(phone)}: {e}")
+        try:
+            await send_message(
+                phone,
+                "Lo siento, ha ocurrido un error. Por favor, inténtalo de nuevo en unos momentos.",
+            )
+        except Exception as send_error:
+            print(f"No se pudo enviar la disculpa a {mask_phone(phone)}: {send_error}")
 
 
 # Las rutas de voz exigen la clave (security.py). Cada llamada gasta saldo de
@@ -111,9 +120,11 @@ async def llm_chat_completions(request: Request):
 async def vapi_webhook(request: Request):
     """Webhook único para todas las tool calls de VAPI."""
     body = await request.json()
-    print(f"VAPI REQUEST: {body}")
+    # Solo un resumen (privacy.py). Antes se escribía el cuerpo entero, con el
+    # nombre, el teléfono y la cita del paciente
+    print(summarize_vapi_request(body))
     result = await asyncio.to_thread(process_vapi_request, body)
-    print(f"VAPI RESPONSE: {result}")
+    print(f"VAPI response: {len(result.get('results', []))} results")
     return result
 
 

@@ -57,8 +57,9 @@ Commands assume the AWS CLI is logged in (`aws login`) and the region is `eu-wes
 
 This alarm exists because the other two cannot see this failure. The webhook answers `200` to Meta immediately and processes the message afterwards. The user receives a generic "ha ocurrido un error" reply.
 
-**Diagnose:** find the error line in the logs (step 3). The exception message usually names the cause:
+**Diagnose:** find the error line in the logs (step 3). The phone number is masked to its last three digits, which is enough to match it with the user who reported the problem. The exception message usually names the cause:
 - `401 ... invalid x-api-key` from Anthropic: the API key was revoked or rotated. See [troubleshooting #006](troubleshooting.md).
+- `401` from `graph.facebook.com`: the WhatsApp token expired or was revoked. A second line, `No se pudo enviar la disculpa`, confirms that WhatsApp itself is failing.
 - `AccessDeniedException` from DynamoDB: the task role is missing a permission on the sessions table.
 - Errors from the Google Calendar API: the service account lost access to the calendar, or the credentials were rotated.
 
