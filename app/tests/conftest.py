@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("WHATSAPP_TOKEN", "test-token")
 os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "000000")
+os.environ.setdefault("WHATSAPP_APP_SECRET", "0123456789abcdef" * 2)  # 32 caracteres, como el de Meta
 os.environ.setdefault("WEBHOOK_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("VOICE_API_KEY", "test-voice-key-" + "x" * 32)  # mínimo 32 caracteres

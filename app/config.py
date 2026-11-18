@@ -10,6 +10,9 @@ class Settings(BaseSettings):
 
     whatsapp_token: str
     whatsapp_phone_number_id: str
+    # El App Secret de Meta, para comprobar la firma de /webhook (security.py).
+    # Tiene 32 caracteres: si es más corto, se copió a medias, y el bot no arranca
+    whatsapp_app_secret: str = Field(min_length=32)
     webhook_verify_token: str
     anthropic_api_key: str
     # La clave que exigen /llm y /vapi (security.py). Obligatoria y de 32
