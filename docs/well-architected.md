@@ -1,6 +1,6 @@
 # Well-Architected review
 
-A review of this project against the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html): what it does well, where it falls short, and why each gap is accepted at this stage. The last section shows how I would build it for production.
+A review of this project against the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html): what it does well, where it falls short, and why each gap is accepted at this stage. The last sections show how I would build it for production, and whether this architecture is the right one for this traffic at all.
 
 - **Date:** 2026-11-19, at the end of v1.0.
 - **Reviewer:** me, so this is a self-assessment. In a team, someone who did not build it should run the review.
@@ -198,3 +198,21 @@ flowchart LR
 - **Today's design, if it ran all month:** about $51.
 
 That difference is the point of the review: each gap above is a decision with a price, not something I missed.
+
+## Is this the right architecture for this traffic?
+
+Before AWS, the same bot ran on Railway: one container, about 100–120 conversations a day, for about $5 a month of hosting. The Claude and WhatsApp API costs are the same on any platform, so this compares infrastructure only:
+
+| Option | Infrastructure a month | What happens when something fails |
+|---|---|---|
+| **Railway**, one container | about $5 | The platform restarts the container. No second copy, no queue. |
+| **This design** (ECS Fargate in two AZs) | cents, started for demos; about $51 always on | Survives the loss of a task or an AZ. A message can still be lost if a task stops mid-processing. |
+| **The production design above** | about $130 always on | Three AZs, a queue, a WAF, private networking. |
+| **Serverless:** Lambda for the webhook and the workers, SQS, DynamoDB on demand | about $1, mostly inside Lambda's monthly free tier | Multi-AZ by default, and the queue fixes the lost-message gap from day one. |
+
+**For one clinic at this volume, I would build it serverless.** About 36,000 messages a month stay inside Lambda's free tier, even though Lambda bills the seconds spent waiting for Claude. The trade-offs:
+
+- FastAPI needs an adapter on Lambda (Mangum or the Lambda Web Adapter), and the streaming voice endpoint fits Lambda less naturally.
+- The first message after a quiet period waits for a cold start, which is acceptable for a chat.
+
+**Why ECS, then?** This is a learning project for cloud roles, and containers, a VPC, a load balancer and autoscaling are what those teams run. ECS is also the better choice when traffic is high and steady: one task serves many requests that are waiting at the same time, while Lambda bills each request for its whole wait.
