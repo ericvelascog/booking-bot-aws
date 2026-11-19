@@ -1,10 +1,11 @@
 import asyncio
+import logging
 import os
 from fastapi import Depends, FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from config import settings
 from claude_agent import process_message
-from privacy import mask_phone, summarize_vapi_request
+from privacy import DropQueryString, mask_phone, summarize_vapi_request
 from security import require_voice_api_key, require_whatsapp_signature
 from whatsapp_service import send_message
 from vapi_service import process_vapi_request
@@ -16,6 +17,11 @@ from llm_service import (
 )
 
 app = FastAPI(title="WhatsApp Fisio Bot")
+
+# Los logs de acceso, sin lo que va después del "?" (privacy.py): ahí Meta manda
+# el verify token. uvicorn configura sus logs antes de importar este archivo,
+# así que el filtro se queda puesto
+logging.getLogger("uvicorn.access").addFilter(DropQueryString())
 
 
 @app.get("/webhook")

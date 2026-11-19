@@ -38,5 +38,7 @@ ENV APP_VERSION=$APP_VERSION
 EXPOSE 8000
 
 # Exec form: uvicorn runs as PID 1 and receives SIGTERM directly when ECS
-# stops the task, so in-flight requests can finish
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# stops the task, so in-flight requests can finish.
+# --no-server-header: responses do not say "server: uvicorn". Naming the server
+# and its version only helps someone look for known vulnerabilities in it
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]
