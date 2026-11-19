@@ -195,7 +195,7 @@ curl -X POST http://localhost:8000/llm/chat/completions \
 
 ## What I'd change for production
 
-These are known limitations of this version, and most of them are planned next:
+These are known limitations of this version. The [Well-Architected review](docs/well-architected.md) goes through all six pillars, explains why each gap is accepted at this stage, and shows the production design with a diagram and its cost (about $130 a month always on, against $51 for this one).
 
 - **End-to-end encryption.** Viewers get HTTPS, but the CloudFront → ALB hop is HTTP. Use a custom domain with an ACM certificate on the ALB, or CloudFront VPC origins with an internal ALB ([ADR-0002](docs/adr/0002-cloudfront-edge-stack.md)).
 - **Concurrent writes to a conversation.** Each message is a read followed by a full write, so two messages from the same person at the same instant could overwrite each other. Use optimistic locking with conditional writes ([ADR-0003](docs/adr/0003-stateless-sessions-in-dynamodb.md)).
@@ -219,6 +219,7 @@ docs/controls.md        IT general controls mapping (evidence and gaps)
 docs/runbook.md         What to do when each alarm fires
 docs/security-scanning.md  What checkov scans, and why each accepted finding was accepted
 docs/troubleshooting.md Real problems hit while building this, and how they were diagnosed
+docs/well-architected.md   Review against the six pillars, and the production design
 ```
 
 ## About
