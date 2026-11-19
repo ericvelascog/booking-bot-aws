@@ -1,5 +1,6 @@
 """Los logs no llevan teléfonos completos ni datos de los pacientes."""
 import asyncio
+import logging
 import re
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from fastapi.testclient import TestClient
 import main
 from config import settings
 from main import app
-from privacy import mask_phone, summarize_vapi_request
+from privacy import DropQueryString, mask_phone, summarize_vapi_request
 
 client = TestClient(app)
 
@@ -108,3 +109,30 @@ def test_the_vapi_log_has_no_patient_data(monkeypatch, capsys):
 @pytest.mark.parametrize("body", [None, "texto", [], {"message": "texto"}, {"message": {"toolCallList": ["x"]}}])
 def test_the_vapi_summary_never_fails(body):
     assert summarize_vapi_request(body).startswith("VAPI request:")
+
+
+def access_log_record(path: str) -> logging.LogRecord:
+    """Una línea del log de acceso tal como la crea uvicorn."""
+    return logging.LogRecord(
+        "uvicorn.access", logging.INFO, "h11_impl.py", 0,
+        '%s - "%s %s HTTP/%s" %d', ("10.0.1.25:41234", "GET", path, "1.1", 200), None,
+    )
+
+
+def test_the_access_log_drops_the_query_string():
+    record = access_log_record("/webhook?hub.mode=subscribe&hub.verify_token=secreto&hub.challenge=123")
+
+    assert DropQueryString().filter(record) is True  # la línea se escribe...
+    assert record.getMessage() == '10.0.1.25:41234 - "GET /webhook HTTP/1.1" 200'  # ...sin la query
+
+
+def test_the_access_log_keeps_paths_without_a_query():
+    record = access_log_record("/health")
+
+    DropQueryString().filter(record)
+
+    assert record.getMessage() == '10.0.1.25:41234 - "GET /health HTTP/1.1" 200'
+
+
+def test_the_filter_is_installed_on_uvicorn_access_logs():
+    assert any(isinstance(f, DropQueryString) for f in logging.getLogger("uvicorn.access").filters)
